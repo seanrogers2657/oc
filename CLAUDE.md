@@ -6,8 +6,11 @@ A Go TUI application for interacting with AI models (Anthropic, OpenAI-compatibl
 
 ```
 ANTHROPIC_API_KEY=sk-ant-... go run ./cmd/oc
-OC_PROVIDER=openai OC_BASE_URL=http://localhost:11434/v1 OC_MODEL=llama3 go run ./cmd/oc
+OC_PROVIDER=ollama OC_MODEL=llama3 go run ./cmd/oc
+OC_PROVIDER=openai OC_BASE_URL=http://localhost:1234/v1 OC_MODEL=my-model go run ./cmd/oc
 ```
+
+Ollama tool support is auto-detected from the model's capabilities at startup. Models that report `"tools"` in their Ollama capabilities will get tool calling enabled automatically; others run in plain chat mode.
 
 ## Architecture
 

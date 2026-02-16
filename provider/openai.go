@@ -7,28 +7,45 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // OpenAIProvider implements Provider for OpenAI-compatible APIs.
 type OpenAIProvider struct {
+	name    string
 	apiKey  string
 	baseURL string
 	client  *http.Client
 }
 
 // NewOpenAI creates a new OpenAI-compatible provider.
-func NewOpenAI(apiKey, baseURL string) *OpenAIProvider {
+// The name parameter controls what Name() returns (e.g. "openai", "ollama").
+func NewOpenAI(name, apiKey, baseURL string) *OpenAIProvider {
+	if name == "" {
+		name = "openai"
+	}
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
 	}
 	return &OpenAIProvider{
+		name:    name,
 		apiKey:  apiKey,
 		baseURL: baseURL,
 		client:  &http.Client{},
 	}
 }
 
-func (p *OpenAIProvider) Name() string { return "openai" }
+func (p *OpenAIProvider) Name() string { return p.name }
+
+// buildURL returns the chat completions endpoint, avoiding double /v1 paths.
+func (p *OpenAIProvider) buildURL() string {
+	base := p.baseURL
+	if strings.HasSuffix(base, "/v1") || strings.HasSuffix(base, "/v1/") {
+		base = strings.TrimRight(base, "/")
+		return base + "/chat/completions"
+	}
+	return base + "/v1/chat/completions"
+}
 
 // Stream sends a chat completion request and returns streaming events.
 func (p *OpenAIProvider) Stream(ctx context.Context, cfg ModelConfig, messages []Message, tools []ToolDef) (<-chan StreamEvent, error) {
@@ -39,7 +56,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, cfg ModelConfig, messages [
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := p.baseURL + "/v1/chat/completions"
+	url := p.buildURL()
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBytes))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -75,8 +92,9 @@ func (p *OpenAIProvider) Stream(ctx context.Context, cfg ModelConfig, messages [
 
 func (p *OpenAIProvider) buildRequest(cfg ModelConfig, messages []Message, tools []ToolDef) map[string]any {
 	body := map[string]any{
-		"model":  cfg.Model,
-		"stream": true,
+		"model":          cfg.Model,
+		"stream":         true,
+		"stream_options": map[string]any{"include_usage": true},
 	}
 
 	if cfg.Temperature != nil {

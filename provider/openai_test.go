@@ -34,7 +34,7 @@ data: [DONE]
 	}))
 	defer srv.Close()
 
-	p := NewOpenAI("test-key", srv.URL)
+	p := NewOpenAI("", "test-key", srv.URL)
 	cfg := ModelConfig{Model: "gpt-4o"}
 
 	ch, err := p.Stream(context.Background(), cfg, []Message{UserMessage("hi")}, nil)
@@ -93,7 +93,7 @@ data: [DONE]
 	}))
 	defer srv.Close()
 
-	p := NewOpenAI("test-key", srv.URL)
+	p := NewOpenAI("", "test-key", srv.URL)
 	cfg := ModelConfig{Model: "gpt-4o"}
 
 	ch, err := p.Stream(context.Background(), cfg, []Message{UserMessage("list files")}, nil)
@@ -149,7 +149,7 @@ func TestOpenAIStreamAPIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewOpenAI("bad-key", srv.URL)
+	p := NewOpenAI("", "bad-key", srv.URL)
 	cfg := ModelConfig{Model: "gpt-4o"}
 
 	_, err := p.Stream(context.Background(), cfg, []Message{UserMessage("hi")}, nil)
@@ -159,7 +159,7 @@ func TestOpenAIStreamAPIError(t *testing.T) {
 }
 
 func TestOpenAIBuildRequestWithTools(t *testing.T) {
-	p := NewOpenAI("key", "")
+	p := NewOpenAI("", "key", "")
 	cfg := ModelConfig{Model: "gpt-4o"}
 	tools := []ToolDef{
 		{
@@ -191,7 +191,7 @@ func TestOpenAIBuildRequestWithTools(t *testing.T) {
 }
 
 func TestOpenAIBuildRequestToolResult(t *testing.T) {
-	p := NewOpenAI("key", "")
+	p := NewOpenAI("", "key", "")
 	cfg := ModelConfig{Model: "gpt-4o"}
 
 	msgs := []Message{
@@ -214,5 +214,60 @@ func TestOpenAIBuildRequestToolResult(t *testing.T) {
 	}
 	if toolMsg["tool_call_id"] != "call_1" {
 		t.Fatalf("tool_call_id = %v", toolMsg["tool_call_id"])
+	}
+}
+
+func TestOpenAIProviderName(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"", "openai"},
+		{"openai", "openai"},
+		{"ollama", "ollama"},
+		{"lm-studio", "lm-studio"},
+	}
+	for _, tt := range tests {
+		p := NewOpenAI(tt.name, "", "")
+		if got := p.Name(); got != tt.want {
+			t.Errorf("NewOpenAI(%q, ...).Name() = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestBuildURL(t *testing.T) {
+	tests := []struct {
+		baseURL string
+		want    string
+	}{
+		{"https://api.openai.com", "https://api.openai.com/v1/chat/completions"},
+		{"http://localhost:11434", "http://localhost:11434/v1/chat/completions"},
+		{"http://localhost:11434/v1", "http://localhost:11434/v1/chat/completions"},
+		{"http://localhost:11434/v1/", "http://localhost:11434/v1/chat/completions"},
+		{"http://localhost:1234/v1", "http://localhost:1234/v1/chat/completions"},
+	}
+	for _, tt := range tests {
+		p := NewOpenAI("", "", tt.baseURL)
+		if got := p.buildURL(); got != tt.want {
+			t.Errorf("buildURL(%q) = %q, want %q", tt.baseURL, got, tt.want)
+		}
+	}
+}
+
+func TestOpenAIBuildRequestIncludesStreamOptions(t *testing.T) {
+	p := NewOpenAI("", "key", "")
+	cfg := ModelConfig{Model: "gpt-4o"}
+	body := p.buildRequest(cfg, []Message{UserMessage("hi")}, nil)
+
+	so, ok := body["stream_options"]
+	if !ok {
+		t.Fatal("missing stream_options")
+	}
+	soMap, ok := so.(map[string]any)
+	if !ok {
+		t.Fatalf("stream_options is %T, want map[string]any", so)
+	}
+	if soMap["include_usage"] != true {
+		t.Fatalf("include_usage = %v, want true", soMap["include_usage"])
 	}
 }

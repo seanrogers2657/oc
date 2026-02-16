@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
+	"time"
 
 	"github.com/srogers/oc/config"
 	"github.com/srogers/oc/event"
@@ -71,6 +76,7 @@ func run(c *cli.Context) error {
 
 	// Select provider adapter
 	var p provider.Provider
+	enableTools := true
 	switch cfg.Provider {
 	case "anthropic":
 		if cfg.APIKey == "" {
@@ -82,17 +88,22 @@ func run(c *cli.Context) error {
 		if cfg.BaseURL == "" {
 			return fmt.Errorf("base URL required for provider %q (set OC_BASE_URL)", cfg.Provider)
 		}
-		p = provider.NewOpenAI(cfg.APIKey, cfg.BaseURL)
+		p = provider.NewOpenAI(cfg.Provider, cfg.APIKey, cfg.BaseURL)
+		if cfg.Provider == "ollama" {
+			enableTools = checkOllamaTools(cfg.BaseURL, cfg.Model)
+		}
 	}
 
-	// Register tools
+	// Register tools (skip for models that don't support tool calling)
 	tools := tool.NewRegistry()
-	tools.Register(tool.NewBash())
-	tools.Register(tool.NewRead())
-	tools.Register(tool.NewWrite())
-	tools.Register(tool.NewEdit())
-	tools.Register(tool.NewGlob())
-	tools.Register(tool.NewGrep())
+	if enableTools {
+		tools.Register(tool.NewBash())
+		tools.Register(tool.NewRead())
+		tools.Register(tool.NewWrite())
+		tools.Register(tool.NewEdit())
+		tools.Register(tool.NewGlob())
+		tools.Register(tool.NewGrep())
+	}
 
 	// Build model config
 	modelCfg := provider.ModelConfig{Model: cfg.Model}
@@ -150,4 +161,45 @@ func run(c *cli.Context) error {
 	defer cancel()
 
 	return ui.Run(ctx)
+}
+
+// checkOllamaTools queries the Ollama API to determine if the model supports tool calling.
+// Returns false on any error (conservative default for non-tool models).
+func checkOllamaTools(baseURL, model string) bool {
+	// Derive the Ollama native API base from the OpenAI-compat base URL.
+	// e.g. "http://localhost:11434/v1" -> "http://localhost:11434"
+	ollamaBase := strings.TrimSuffix(baseURL, "/")
+	ollamaBase = strings.TrimSuffix(ollamaBase, "/v1")
+
+	reqBody, _ := json.Marshal(map[string]string{"model": model})
+	req, err := http.NewRequest("POST", ollamaBase+"/api/show", bytes.NewReader(reqBody))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	var result struct {
+		Capabilities []string `json:"capabilities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false
+	}
+
+	for _, cap := range result.Capabilities {
+		if cap == "tools" {
+			return true
+		}
+	}
+	return false
 }
