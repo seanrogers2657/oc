@@ -1,0 +1,283 @@
+package provider
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+)
+
+// OpenAIProvider implements Provider for OpenAI-compatible APIs.
+type OpenAIProvider struct {
+	apiKey  string
+	baseURL string
+	client  *http.Client
+}
+
+// NewOpenAI creates a new OpenAI-compatible provider.
+func NewOpenAI(apiKey, baseURL string) *OpenAIProvider {
+	if baseURL == "" {
+		baseURL = "https://api.openai.com"
+	}
+	return &OpenAIProvider{
+		apiKey:  apiKey,
+		baseURL: baseURL,
+		client:  &http.Client{},
+	}
+}
+
+func (p *OpenAIProvider) Name() string { return "openai" }
+
+// Stream sends a chat completion request and returns streaming events.
+func (p *OpenAIProvider) Stream(ctx context.Context, cfg ModelConfig, messages []Message, tools []ToolDef) (<-chan StreamEvent, error) {
+	body := p.buildRequest(cfg, messages, tools)
+
+	reqBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	url := p.baseURL + "/v1/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBytes))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		errBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(errBody))
+	}
+
+	ch := make(chan StreamEvent, 32)
+	go p.readStream(resp.Body, ch)
+	return ch, nil
+}
+
+func (p *OpenAIProvider) buildRequest(cfg ModelConfig, messages []Message, tools []ToolDef) map[string]any {
+	body := map[string]any{
+		"model":  cfg.Model,
+		"stream": true,
+	}
+
+	if cfg.Temperature != nil {
+		body["temperature"] = *cfg.Temperature
+	}
+	if cfg.MaxTokens != nil {
+		body["max_tokens"] = *cfg.MaxTokens
+	}
+	if cfg.TopP != nil {
+		body["top_p"] = *cfg.TopP
+	}
+
+	// Convert messages
+	var msgs []map[string]any
+	for _, m := range messages {
+		msg := map[string]any{
+			"role": string(m.Role),
+		}
+
+		if m.Role == RoleTool {
+			msg["content"] = m.Content
+			msg["tool_call_id"] = m.ToolCallID
+		} else if m.Role == RoleAssistant && len(m.ToolCalls) > 0 {
+			if m.Content != "" {
+				msg["content"] = m.Content
+			} else {
+				msg["content"] = nil
+			}
+			var tcs []map[string]any
+			for _, tc := range m.ToolCalls {
+				tcs = append(tcs, map[string]any{
+					"id":   tc.ID,
+					"type": "function",
+					"function": map[string]any{
+						"name":      tc.Name,
+						"arguments": tc.Args,
+					},
+				})
+			}
+			msg["tool_calls"] = tcs
+		} else {
+			msg["content"] = m.Content
+		}
+
+		msgs = append(msgs, msg)
+	}
+	body["messages"] = msgs
+
+	// Convert tools
+	if len(tools) > 0 {
+		var defs []map[string]any
+		for _, t := range tools {
+			defs = append(defs, ToolDefToFunctionSchema(t))
+		}
+		body["tools"] = defs
+	}
+
+	return body
+}
+
+// readStream parses the SSE stream and sends StreamEvents.
+func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
+	defer close(ch)
+	defer body.Close()
+
+	reader := NewSSEReader(body)
+
+	// Accumulate tool calls by index
+	toolCalls := make(map[int]*ToolCall)
+
+	for {
+		sse, err := reader.Next()
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			ch <- StreamEvent{Type: EventError, Error: err}
+			return
+		}
+
+		if sse.Data == "[DONE]" {
+			return
+		}
+
+		var chunk openaiChunk
+		if err := json.Unmarshal([]byte(sse.Data), &chunk); err != nil {
+			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("parse chunk: %w", err)}
+			return
+		}
+
+		if len(chunk.Choices) == 0 {
+			// Usage-only chunk (some providers send this at the end)
+			if chunk.Usage != nil {
+				ch <- StreamEvent{
+					Type: EventDone,
+					Usage: &Usage{
+						InputTokens:  chunk.Usage.PromptTokens,
+						OutputTokens: chunk.Usage.CompletionTokens,
+						TotalTokens:  chunk.Usage.TotalTokens,
+					},
+				}
+			}
+			continue
+		}
+
+		choice := chunk.Choices[0]
+		delta := choice.Delta
+
+		// Text content
+		if delta.Content != "" {
+			ch <- StreamEvent{Type: EventText, Text: delta.Content}
+		}
+
+		// Reasoning / thinking content (some models emit this)
+		if delta.Reasoning != "" {
+			ch <- StreamEvent{Type: EventReasoningDelta, Text: delta.Reasoning}
+		}
+
+		// Tool calls (accumulated by index)
+		for _, tc := range delta.ToolCalls {
+			existing, ok := toolCalls[tc.Index]
+			if !ok {
+				// New tool call
+				existing = &ToolCall{
+					ID:   tc.ID,
+					Name: tc.Function.Name,
+				}
+				toolCalls[tc.Index] = existing
+				ch <- StreamEvent{
+					Type:     EventToolCallStart,
+					ToolCall: &ToolCall{ID: tc.ID, Name: tc.Function.Name},
+				}
+			}
+
+			// Accumulate args
+			if tc.Function.Arguments != "" {
+				existing.Args += tc.Function.Arguments
+				ch <- StreamEvent{
+					Type:     EventToolCallDelta,
+					ToolCall: &ToolCall{ID: existing.ID, Name: existing.Name, Args: tc.Function.Arguments},
+				}
+			}
+		}
+
+		// Finish reason
+		if choice.FinishReason != "" {
+			// Emit tool call end events
+			if choice.FinishReason == "tool_calls" {
+				for _, tc := range toolCalls {
+					ch <- StreamEvent{
+						Type:     EventToolCallEnd,
+						ToolCall: &ToolCall{ID: tc.ID, Name: tc.Name, Args: tc.Args},
+					}
+				}
+			}
+
+			usage := (*Usage)(nil)
+			if chunk.Usage != nil {
+				usage = &Usage{
+					InputTokens:  chunk.Usage.PromptTokens,
+					OutputTokens: chunk.Usage.CompletionTokens,
+					TotalTokens:  chunk.Usage.TotalTokens,
+				}
+			}
+
+			ch <- StreamEvent{
+				Type:         EventDone,
+				FinishReason: choice.FinishReason,
+				Usage:        usage,
+			}
+
+			// Reset tool calls for potential next round
+			toolCalls = make(map[int]*ToolCall)
+		}
+	}
+}
+
+// --- OpenAI JSON structures ---
+
+type openaiChunk struct {
+	Choices []openaiChoice `json:"choices"`
+	Usage   *openaiUsage   `json:"usage,omitempty"`
+}
+
+type openaiChoice struct {
+	Delta        openaiDelta `json:"delta"`
+	FinishReason string      `json:"finish_reason,omitempty"`
+}
+
+type openaiDelta struct {
+	Content   string            `json:"content,omitempty"`
+	Reasoning string            `json:"reasoning_content,omitempty"`
+	ToolCalls []openaiToolDelta `json:"tool_calls,omitempty"`
+}
+
+type openaiToolDelta struct {
+	Index    int            `json:"index"`
+	ID       string         `json:"id,omitempty"`
+	Function openaiFunction `json:"function"`
+}
+
+type openaiFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+}
+
+type openaiUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}

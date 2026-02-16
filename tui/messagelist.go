@@ -1,0 +1,459 @@
+package tui
+
+import (
+	"github.com/srogers/oc/event"
+	"github.com/srogers/oc/markdown"
+	"github.com/srogers/oc/provider"
+	"github.com/srogers/oc/session"
+)
+
+// MessageListProvider gives the message list access to session state.
+type MessageListProvider func() []session.Message
+
+// MessageList is a scrollable chat history component.
+type MessageList struct {
+	getMessages MessageListProvider
+	scroll      ScrollState
+	autoScroll  bool // auto-scroll to bottom on new content
+	dirty       bool // needs re-render
+}
+
+// NewMessageList creates a new message list.
+func NewMessageList(getMessages MessageListProvider) *MessageList {
+	return &MessageList{
+		getMessages: getMessages,
+		autoScroll:  true,
+	}
+}
+
+func (ml *MessageList) Focused() bool     { return false }
+func (ml *MessageList) SetFocused(f bool) {}
+func (ml *MessageList) MinSize() (int, int) { return 20, 3 }
+
+// Update handles events. Returns true if redraw needed.
+func (ml *MessageList) Update(ev Event) bool {
+	switch e := ev.(type) {
+	case KeyEvent:
+		// Scroll with PgUp/PgDown
+		switch e.Key {
+		case KeyPgUp:
+			ml.scroll.ScrollUp(ml.scroll.ViewportHeight / 2)
+			ml.autoScroll = false
+			return true
+		case KeyPgDown:
+			ml.scroll.ScrollDown(ml.scroll.ViewportHeight / 2)
+			if ml.scroll.AtBottom() {
+				ml.autoScroll = true
+			}
+			return true
+		}
+
+	case ScrollEvent:
+		if e.Up {
+			ml.scroll.ScrollUp(3)
+			ml.autoScroll = false
+		} else {
+			ml.scroll.ScrollDown(3)
+			if ml.scroll.AtBottom() {
+				ml.autoScroll = true
+			}
+		}
+		return true
+
+	case CustomEvent:
+		switch e.Topic {
+		case event.TopicPartDelta, event.TopicMsgDone, event.TopicToolStart, event.TopicToolDone, event.TopicError:
+			ml.dirty = true
+			return true
+		}
+
+	case TickEvent:
+		// Refresh during streaming
+		if ml.dirty {
+			ml.dirty = false
+			return true
+		}
+	}
+
+	return false
+}
+
+// Render draws the message list into the buffer.
+func (ml *MessageList) Render(buf *ScreenBuffer, bounds Rect) {
+	if bounds.Width < 1 || bounds.Height < 1 || ml.getMessages == nil {
+		return
+	}
+
+	// Pre-render all messages into lines
+	msgs := ml.getMessages()
+	var allLines []renderedLine
+	width := bounds.Width - 2 // margin
+
+	for _, msg := range msgs {
+		lines := ml.renderMessage(msg, width)
+		allLines = append(allLines, lines...)
+		// Blank line between messages
+		allLines = append(allLines, renderedLine{})
+	}
+
+	// Update scroll state
+	ml.scroll.ContentHeight = len(allLines)
+	ml.scroll.ViewportHeight = bounds.Height
+	if ml.autoScroll {
+		ml.scroll.ScrollToBottom()
+	}
+
+	// Draw visible lines
+	startLine := ml.scroll.Offset
+	for i := 0; i < bounds.Height; i++ {
+		lineIdx := startLine + i
+		if lineIdx >= len(allLines) {
+			break
+		}
+		rl := allLines[lineIdx]
+		y := bounds.Y + i
+		x := bounds.X + 1 // left margin
+
+		for _, span := range rl.spans {
+			x += buf.WriteString(x, y, span.text, span.style)
+		}
+	}
+}
+
+// renderedLine is one pre-rendered screen line with styled spans.
+type renderedLine struct {
+	spans []styledSpan
+}
+
+type styledSpan struct {
+	text  string
+	style Style
+}
+
+// renderMessage converts a session.Message into renderedLines.
+func (ml *MessageList) renderMessage(msg session.Message, maxWidth int) []renderedLine {
+	var lines []renderedLine
+
+	isUser := msg.Role == provider.RoleUser
+	isTool := msg.Role == provider.RoleTool
+
+	// Prefixing constants
+	const userPrefix = "> "
+	const assistantIndent = "  "
+
+	// Determine content width (account for prefix/indent)
+	contentWidth := maxWidth
+	if isUser {
+		contentWidth = maxWidth - len(userPrefix)
+	} else if !isTool {
+		contentWidth = maxWidth - len(assistantIndent)
+	}
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+
+	// Render each part
+	for _, part := range msg.Parts {
+		switch p := part.(type) {
+		case session.TextPart:
+			if p.Text == "" {
+				continue
+			}
+			mdLines := markdown.Render(p.Text)
+			for _, mdLine := range mdLines {
+				lines = append(lines, mdLineToRendered(mdLine, contentWidth)...)
+			}
+
+		case session.ReasoningPart:
+			if p.Text == "" {
+				continue
+			}
+			thinkStyle := Style{FG: NewColor(120, 120, 120), Italic: true}
+			lines = append(lines, renderedLine{spans: []styledSpan{
+				{text: "thinking: ", style: Style{FG: NewColor(100, 100, 100), Italic: true, Bold: true}},
+			}})
+			wrapped := wrapText(p.Text, contentWidth)
+			for _, wl := range wrapped {
+				lines = append(lines, renderedLine{spans: []styledSpan{
+					{text: wl, style: thinkStyle},
+				}})
+			}
+
+		case session.ToolCallPart:
+			if msg.Role == provider.RoleTool {
+				continue
+			}
+			lines = append(lines, renderToolCallLines(p, contentWidth)...)
+		}
+	}
+
+	// Render error as agent-style content
+	if msg.Error != nil {
+		errStyle := Style{FG: NewColor(255, 80, 80)}
+		errLabel := Style{FG: NewColor(255, 80, 80), Bold: true}
+		wrapped := wrapText(msg.Error.Error(), contentWidth-len("Error: "))
+		for i, wl := range wrapped {
+			if i == 0 {
+				lines = append(lines, renderedLine{spans: []styledSpan{
+					{text: "Error: ", style: errLabel},
+					{text: wl, style: errStyle},
+				}})
+			} else {
+				lines = append(lines, renderedLine{spans: []styledSpan{
+					{text: wl, style: errStyle},
+				}})
+			}
+		}
+	}
+
+	// Apply prefix/indent to all content lines
+	if isUser {
+		userStyle := Style{FG: NewColor(180, 180, 180)}
+		for i, line := range lines {
+			prefixed := []styledSpan{{text: userPrefix, style: userStyle}}
+			// Apply light gray to all spans
+			for _, s := range line.spans {
+				s.style.FG = NewColor(180, 180, 180)
+				prefixed = append(prefixed, s)
+			}
+			lines[i] = renderedLine{spans: prefixed}
+		}
+	} else if !isTool {
+		for i, line := range lines {
+			if len(line.spans) == 0 {
+				continue
+			}
+			indented := []styledSpan{{text: assistantIndent, style: Style{}}}
+			indented = append(indented, line.spans...)
+			lines[i] = renderedLine{spans: indented}
+		}
+	}
+
+	return lines
+}
+
+// mdLineToRendered converts a markdown.Line to renderedLines, wrapping if needed.
+func mdLineToRendered(line markdown.Line, maxWidth int) []renderedLine {
+	if len(line.Spans) == 0 {
+		return []renderedLine{{}}
+	}
+
+	// Simple case: build spans for the line
+	var spans []styledSpan
+	cx := line.Indent
+	var currentRow []styledSpan
+
+	// Add indent
+	if line.Indent > 0 {
+		indent := ""
+		for i := 0; i < line.Indent && i < maxWidth; i++ {
+			indent += " "
+		}
+		currentRow = append(currentRow, styledSpan{text: indent, style: Style{}})
+	}
+
+	for _, span := range line.Spans {
+		style := mdStyle(span.Kind)
+
+		// For HRule, produce a full-width line
+		if span.Kind == markdown.KindHRule {
+			hrText := ""
+			for i := 0; i < maxWidth; i++ {
+				hrText += "─"
+			}
+			return []renderedLine{{spans: []styledSpan{{text: hrText, style: style}}}}
+		}
+
+		remaining := span.Text
+		for remaining != "" {
+			avail := maxWidth - cx
+			if avail <= 0 {
+				// Wrap: emit current row and start new one
+				spans = append(spans, currentRow...)
+				currentRow = nil
+				cx = line.Indent
+				avail = maxWidth - cx
+			}
+
+			if len(remaining) <= avail {
+				currentRow = append(currentRow, styledSpan{text: remaining, style: style})
+				cx += len(remaining)
+				remaining = ""
+			} else {
+				chunk := remaining[:avail]
+				currentRow = append(currentRow, styledSpan{text: chunk, style: style})
+				remaining = remaining[avail:]
+				// Emit this row
+				spans = append(spans, currentRow...)
+				currentRow = nil
+				cx = line.Indent
+			}
+		}
+	}
+
+	// Flush remaining
+	if len(currentRow) > 0 {
+		spans = append(spans, currentRow...)
+	}
+
+	// For now, treat it as a single line (wrapping handled above by splitting into multiple calls)
+	// TODO: improve multi-line wrapping
+	if len(spans) == 0 {
+		return []renderedLine{{}}
+	}
+
+	// Split spans back into rows based on maxWidth
+	var result []renderedLine
+	var rowSpans []styledSpan
+	rowWidth := 0
+
+	for _, s := range spans {
+		sLen := len(s.text)
+		if rowWidth+sLen > maxWidth && rowWidth > 0 {
+			result = append(result, renderedLine{spans: rowSpans})
+			rowSpans = nil
+			rowWidth = 0
+		}
+		rowSpans = append(rowSpans, s)
+		rowWidth += sLen
+	}
+	if len(rowSpans) > 0 {
+		result = append(result, renderedLine{spans: rowSpans})
+	}
+
+	if len(result) == 0 {
+		return []renderedLine{{}}
+	}
+	return result
+}
+
+// renderToolCallLines creates rendered lines for a tool call part.
+func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
+	var lines []renderedLine
+
+	// Status + tool name
+	var statusIcon string
+	var statusStyle Style
+	switch tc.Status {
+	case session.ToolPending:
+		statusIcon = "○"
+		statusStyle = Style{FG: NewColor(120, 120, 120)}
+	case session.ToolRunning:
+		statusIcon = "◌"
+		statusStyle = Style{FG: NewColor(255, 200, 50)}
+	case session.ToolCompleted:
+		statusIcon = "●"
+		statusStyle = Style{FG: NewColor(100, 200, 100)}
+	case session.ToolError:
+		statusIcon = "✗"
+		statusStyle = Style{FG: NewColor(255, 80, 80)}
+	}
+
+	toolStyle := Style{FG: NewColor(180, 140, 255), Bold: true}
+	headerSpans := []styledSpan{
+		{text: statusIcon + " ", style: statusStyle},
+		{text: tc.Tool, style: toolStyle},
+	}
+
+	if !tc.End.IsZero() && !tc.Start.IsZero() {
+		dur := tc.End.Sub(tc.Start)
+		durStr := " (" + dur.Round(1e6).String() + ")"
+		headerSpans = append(headerSpans, styledSpan{text: durStr, style: Style{FG: NewColor(100, 100, 100)}})
+	}
+	lines = append(lines, renderedLine{spans: headerSpans})
+
+	// Output (truncated)
+	if tc.Output != "" {
+		outputStyle := Style{FG: NewColor(160, 160, 160)}
+		outputLines := wrapText(tc.Output, maxWidth-2)
+		const maxOutputLines = 10
+		for i, ol := range outputLines {
+			if i >= maxOutputLines {
+				remaining := len(outputLines) - maxOutputLines
+				lines = append(lines, renderedLine{spans: []styledSpan{
+					{text: "  ...", style: Style{FG: NewColor(100, 100, 100)}},
+					{text: " (" + itoa(remaining) + " more lines)", style: Style{FG: NewColor(100, 100, 100)}},
+				}})
+				break
+			}
+			lines = append(lines, renderedLine{spans: []styledSpan{
+				{text: "  " + ol, style: outputStyle},
+			}})
+		}
+	}
+
+	// Error
+	if tc.Error != "" {
+		errStyle := Style{FG: NewColor(255, 80, 80)}
+		lines = append(lines, renderedLine{spans: []styledSpan{
+			{text: "  Error: " + tc.Error, style: errStyle},
+		}})
+	}
+
+	return lines
+}
+
+// wrapText splits text into lines of at most maxWidth characters.
+func wrapText(text string, maxWidth int) []string {
+	if maxWidth <= 0 {
+		maxWidth = 80
+	}
+
+	var result []string
+	for _, line := range splitLines(text) {
+		if len(line) <= maxWidth {
+			result = append(result, line)
+		} else {
+			for len(line) > maxWidth {
+				result = append(result, line[:maxWidth])
+				line = line[maxWidth:]
+			}
+			if line != "" {
+				result = append(result, line)
+			}
+		}
+	}
+	return result
+}
+
+// splitLines splits on \n, like strings.Split but handles empty.
+func splitLines(s string) []string {
+	if s == "" {
+		return nil
+	}
+	lines := make([]string, 0)
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	lines = append(lines, s[start:])
+	return lines
+}
+
+// itoa converts int to string without importing strconv.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := false
+	if n < 0 {
+		neg = true
+		n = -n
+	}
+	digits := make([]byte, 0, 10)
+	for n > 0 {
+		digits = append(digits, byte('0'+n%10))
+		n /= 10
+	}
+	if neg {
+		digits = append(digits, '-')
+	}
+	// Reverse
+	for i, j := 0, len(digits)-1; i < j; i, j = i+1, j-1 {
+		digits[i], digits[j] = digits[j], digits[i]
+	}
+	return string(digits)
+}
