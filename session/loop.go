@@ -208,13 +208,16 @@ func (s *Session) streamOnce(ctx context.Context) (bool, error) {
 			}
 
 		case provider.EventDone:
-			finishReason = ev.FinishReason
+			if ev.FinishReason != "" {
+				finishReason = ev.FinishReason
+			}
 			if ev.Usage != nil {
 				assistantMsg.Tokens = *ev.Usage
 				s.mu.Lock()
 				s.tokens.InputTokens += ev.Usage.InputTokens
 				s.tokens.OutputTokens += ev.Usage.OutputTokens
 				s.tokens.TotalTokens += ev.Usage.TotalTokens
+				s.contextTokens = ev.Usage.InputTokens
 				s.mu.Unlock()
 			}
 			s.updateMessage(assistantMsg)

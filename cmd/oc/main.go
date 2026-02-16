@@ -145,11 +145,12 @@ func run(c *cli.Context) error {
 			}
 			tokens := sess.GetTokens()
 			return tui.StatusInfo{
-				Model:      cfg.Model,
-				Provider:   p.Name(),
-				Status:     status,
-				Tokens:     tokens.TotalTokens,
-				WorkingDir: workingDir,
+				Model:         cfg.Model,
+				Provider:      p.Name(),
+				Status:        status,
+				Tokens:        tokens.TotalTokens,
+				ContextTokens: sess.GetContextTokens(),
+				WorkingDir:    workingDir,
 			}
 		},
 		Messages: func() []session.Message {

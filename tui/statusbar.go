@@ -92,10 +92,16 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 		x += buf.WriteString(x, bounds.Y, " ", bgStyle)
 	}
 
-	// Right-aligned: tokens and cost
+	// Right-aligned: context, tokens, and cost
 	right := ""
+	if info.ContextTokens > 0 {
+		right = fmt.Sprintf("ctx %s", formatTokens(info.ContextTokens))
+	}
 	if info.Tokens > 0 {
-		right = fmt.Sprintf("%d tokens", info.Tokens)
+		if right != "" {
+			right += " | "
+		}
+		right += fmt.Sprintf("%s tokens", formatTokens(info.Tokens))
 	}
 	if info.Cost != "" {
 		if right != "" {
@@ -110,6 +116,17 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 			buf.WriteString(rx, bounds.Y, right, bgStyle)
 		}
 	}
+}
+
+// formatTokens formats a token count with K/M suffixes for readability.
+func formatTokens(n int) string {
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	}
+	if n >= 1_000 {
+		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+	}
+	return fmt.Sprintf("%d", n)
 }
 
 // shortenHome replaces the user's home directory prefix with "~".

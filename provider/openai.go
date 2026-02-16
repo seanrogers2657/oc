@@ -209,8 +209,12 @@ func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
 		}
 
 		// Reasoning / thinking content (some models emit this)
-		if delta.Reasoning != "" {
-			ch <- StreamEvent{Type: EventReasoningDelta, Text: delta.Reasoning}
+		reasoning := delta.Reasoning
+		if reasoning == "" {
+			reasoning = delta.ReasoningOllama
+		}
+		if reasoning != "" {
+			ch <- StreamEvent{Type: EventReasoningDelta, Text: reasoning}
 		}
 
 		// Tool calls (accumulated by index)
@@ -285,9 +289,10 @@ type openaiChoice struct {
 }
 
 type openaiDelta struct {
-	Content   string            `json:"content,omitempty"`
-	Reasoning string            `json:"reasoning_content,omitempty"`
-	ToolCalls []openaiToolDelta `json:"tool_calls,omitempty"`
+	Content          string            `json:"content,omitempty"`
+	Reasoning        string            `json:"reasoning_content,omitempty"`
+	ReasoningOllama  string            `json:"reasoning,omitempty"`
+	ToolCalls        []openaiToolDelta `json:"tool_calls,omitempty"`
 }
 
 type openaiToolDelta struct {

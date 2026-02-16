@@ -33,8 +33,9 @@ type Session struct {
 	mu         sync.RWMutex
 	messages   []Message
 	status     SessionStatus
-	tokens     provider.Usage
-	cancel     func() // cancel current stream
+	tokens        provider.Usage
+	contextTokens int // input tokens from the most recent request
+	cancel        func() // cancel current stream
 }
 
 // GetMessages returns a snapshot of the conversation history.
@@ -67,6 +68,13 @@ func (s *Session) GetTokens() provider.Usage {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.tokens
+}
+
+// GetContextTokens returns the input token count from the most recent request.
+func (s *Session) GetContextTokens() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.contextTokens
 }
 
 // addMessage appends a message and returns it.

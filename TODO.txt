@@ -1,6 +1,6 @@
-* [feature] hook up open models
+* [feature] compact conversation, recent messages more relevant that older messages
 * [feature] show the current context fill percentage in status line
-* [feature] EDIT should show lines removed and lines added like git with colors
+* [feature] EDIT should show lines removed and lines added like git with background colors
 * [feature] project based settings, basically a .oc/ folder with all project based configurations that we should adhere to. 
 * [feature] sandbox environment. Using simple allow list semantics and project based files (.oc/sandbox.json), lets setup the ability to limit the power of oc so it doesn't cause damage. 
 * [feature] add the ability to simulate rate limits in the oc tool. possibly declared in project configuration. 
