@@ -51,6 +51,13 @@ func (p *AnthropicProvider) Stream(ctx context.Context, cfg ModelConfig, message
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, &RateLimitError{
+				StatusCode: resp.StatusCode,
+				Message:    string(errBody),
+				RetryAfter: parseRetryAfter(resp),
+			}
+		}
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(errBody))
 	}
 

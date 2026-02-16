@@ -1,0 +1,6 @@
+* [bug] EDIT doesn't show the output of what its editing, like READ and WRITE do. Lets fix that. 
+* [bug] tool read/write outputs to message list, which is what we want but there's currently a bug where as lines are coming in, other lines also show up in the output and the user can't see what's happening. 
+* [bug] the output from READ/WRITE has numbered lines that get cut off from whats in the output. 
+* [feature] project based settings, basically a .oc/ folder with all project based configurations that we should adhere to. 
+* [feature] sandbox environment. Using simple allow list semantics and project based files (.oc/sandbox.json), lets setup the ability to limit the power of oc so it doesn't cause damage. 
+* [feature] add the ability to simulate rate limits in the oc tool. possibly declared in project configuration. 

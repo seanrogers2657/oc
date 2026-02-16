@@ -350,9 +350,13 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 	}
 
 	toolStyle := Style{FG: NewColor(180, 140, 255), Bold: true}
+	label := tc.Tool
+	if tc.Title != "" {
+		label = tc.Title
+	}
 	headerSpans := []styledSpan{
 		{text: statusIcon + " ", style: statusStyle},
-		{text: tc.Tool, style: toolStyle},
+		{text: label, style: toolStyle},
 	}
 
 	if !tc.End.IsZero() && !tc.Start.IsZero() {

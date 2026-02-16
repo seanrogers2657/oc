@@ -42,6 +42,7 @@ type ToolCallPart struct {
 	Args   string
 	Status ToolStatus
 	Output string
+	Title  string // short summary for TUI display
 	Error  string
 	Start  time.Time
 	End    time.Time

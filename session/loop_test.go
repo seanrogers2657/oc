@@ -182,6 +182,16 @@ func TestLoopWithToolCall(t *testing.T) {
 		t.Fatalf("expected at least 4 messages, got %d", len(msgs))
 	}
 
+	// Verify the tool call part has the Title from the tool result
+	assistantMsg := msgs[1]
+	for _, p := range assistantMsg.Parts {
+		if tc, ok := p.(ToolCallPart); ok {
+			if tc.Title != "echo" {
+				t.Errorf("expected tool call Title %q, got %q", "echo", tc.Title)
+			}
+		}
+	}
+
 	// Verify provider was called twice (once for tool call, once after tool result)
 	mp.mu.Lock()
 	if mp.calls != 2 {
@@ -333,6 +343,38 @@ type errorProvider struct {
 
 func (e *errorProvider) Stream(_ context.Context, _ provider.ModelConfig, _ []provider.Message, _ []provider.ToolDef) (<-chan provider.StreamEvent, error) {
 	return nil, e.err
+}
+
+// rateLimitMockProvider returns a RateLimitError for the first failCount calls,
+// then streams a successful response.
+type rateLimitMockProvider struct {
+	failCount  int // how many times to return 429 before succeeding
+	retryAfter time.Duration
+	calls      int
+	mu         sync.Mutex
+}
+
+func (m *rateLimitMockProvider) Stream(_ context.Context, _ provider.ModelConfig, _ []provider.Message, _ []provider.ToolDef) (<-chan provider.StreamEvent, error) {
+	m.mu.Lock()
+	m.calls++
+	call := m.calls
+	m.mu.Unlock()
+
+	if call <= m.failCount {
+		return nil, &provider.RateLimitError{
+			StatusCode: 429,
+			Message:    "rate limit exceeded",
+			RetryAfter: m.retryAfter,
+		}
+	}
+
+	ch := make(chan provider.StreamEvent, 5)
+	go func() {
+		ch <- provider.StreamEvent{Type: provider.EventText, Text: "Success after retry"}
+		ch <- provider.StreamEvent{Type: provider.EventDone, FinishReason: "stop", Usage: &provider.Usage{InputTokens: 5, OutputTokens: 3, TotalTokens: 8}}
+		close(ch)
+	}()
+	return ch, nil
 }
 
 func TestLoopPublishesEvents(t *testing.T) {
@@ -545,5 +587,120 @@ func TestSessionCancel(t *testing.T) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
+	}
+}
+
+func TestLoopRetryOnRateLimit(t *testing.T) {
+	// Provider returns 429 on first call, succeeds on second.
+	mp := &rateLimitMockProvider{failCount: 1, retryAfter: 10 * time.Millisecond}
+	te := &mockToolExecutor{tools: map[string]tool.Tool{}}
+
+	bus := event.NewBus()
+	store := NewStore()
+	s := store.Create(Deps{
+		Model:  mp,
+		Tools:  te,
+		Events: bus,
+	}, provider.ModelConfig{Model: "test-model"}, "")
+
+	s.Send(context.Background(), "retry me")
+
+	if !waitForIdle(s, 5*time.Second) {
+		t.Fatal("session did not return to idle")
+	}
+
+	// Provider should have been called exactly twice
+	mp.mu.Lock()
+	calls := mp.calls
+	mp.mu.Unlock()
+	if calls != 2 {
+		t.Errorf("expected 2 provider calls, got %d", calls)
+	}
+
+	// Should have user + assistant messages (no error message)
+	msgs := s.GetMessages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (user + assistant), got %d", len(msgs))
+	}
+
+	// The assistant message should contain the success text, not an error
+	lastMsg := msgs[len(msgs)-1]
+	if lastMsg.Error != nil {
+		t.Errorf("expected no error on assistant message, got: %v", lastMsg.Error)
+	}
+	text := extractText(lastMsg.Parts)
+	if text != "Success after retry" {
+		t.Errorf("expected 'Success after retry', got %q", text)
+	}
+}
+
+func TestLoopRetryExhausted(t *testing.T) {
+	// Provider always returns 429 — should give up after maxRetries.
+	mp := &rateLimitMockProvider{failCount: 100, retryAfter: 10 * time.Millisecond}
+	te := &mockToolExecutor{tools: map[string]tool.Tool{}}
+
+	bus := event.NewBus()
+	store := NewStore()
+	s := store.Create(Deps{
+		Model:  mp,
+		Tools:  te,
+		Events: bus,
+	}, provider.ModelConfig{Model: "test-model"}, "")
+
+	s.Send(context.Background(), "exhaust retries")
+
+	if !waitForIdle(s, 10*time.Second) {
+		t.Fatal("session did not return to idle")
+	}
+
+	// 1 initial attempt + maxRetries retried attempts, then the final attempt
+	// where retries==maxRetries causes it to give up. Total = maxRetries + 1.
+	mp.mu.Lock()
+	calls := mp.calls
+	mp.mu.Unlock()
+	if calls != maxRetries+1 {
+		t.Errorf("expected %d provider calls, got %d", maxRetries+1, calls)
+	}
+
+	// Error should appear in chat
+	msgs := s.GetMessages()
+	lastMsg := msgs[len(msgs)-1]
+	if lastMsg.Error == nil {
+		t.Fatal("expected an error message after retries exhausted")
+	}
+}
+
+func TestLoopRetryRespectsCancel(t *testing.T) {
+	// Provider always returns 429 with a long retry-after.
+	// We cancel the context during the wait and verify the loop exits promptly.
+	mp := &rateLimitMockProvider{failCount: 100, retryAfter: 30 * time.Second}
+	te := &mockToolExecutor{tools: map[string]tool.Tool{}}
+
+	bus := event.NewBus()
+	store := NewStore()
+	ctx, cancel := context.WithCancel(context.Background())
+	s := store.Create(Deps{
+		Model:  mp,
+		Tools:  te,
+		Events: bus,
+	}, provider.ModelConfig{Model: "test-model"}, "")
+
+	s.Send(ctx, "cancel during retry")
+
+	// Wait a bit for the first retry wait to start, then cancel
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	// Session should return to idle quickly (not wait 30s)
+	if !waitForIdle(s, 2*time.Second) {
+		t.Fatal("session did not return to idle after context cancel")
+	}
+
+	// Should have been called only once or twice (not all retries)
+	mp.mu.Lock()
+	calls := mp.calls
+	mp.mu.Unlock()
+	if calls > 2 {
+		t.Errorf("expected at most 2 calls before cancel, got %d", calls)
 	}
 }

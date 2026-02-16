@@ -2,12 +2,19 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/srogers/oc/event"
 	"github.com/srogers/oc/provider"
 	"github.com/srogers/oc/tool"
+)
+
+const (
+	maxRetries       = 5
+	initialBackoff   = 5 * time.Second
+	maxBackoff       = 60 * time.Second
 )
 
 // Send processes a user message: appends it to history, then runs the
@@ -51,6 +58,8 @@ func (s *Session) runLoop(ctx context.Context) {
 		s.mu.Unlock()
 	}()
 
+	retries := 0
+
 	for {
 		streamCtx, cancel := context.WithCancel(ctx)
 		s.mu.Lock()
@@ -61,12 +70,36 @@ func (s *Session) runLoop(ctx context.Context) {
 		cancel()
 
 		if err != nil {
-			// Create an assistant message with the error so it shows in chat
+			var rle *provider.RateLimitError
+			if errors.As(err, &rle) && retries < maxRetries {
+				retries++
+				wait := retryBackoff(rle.RetryAfter, retries)
+
+				s.deps.Events.Publish(event.TopicStatus,
+					fmt.Sprintf("Rate limited, retrying in %ds... (attempt %d/%d)",
+						int(wait.Seconds()), retries, maxRetries))
+
+				timer := time.NewTimer(wait)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					s.setStatus(StatusIdle)
+					s.deps.Events.Publish(event.TopicStatus, "idle")
+					return
+				case <-timer.C:
+				}
+				continue
+			}
+
+			// Non-retryable error, or retries exhausted
 			s.addErrorMessage(err)
 			s.setStatus(StatusIdle)
 			s.deps.Events.Publish(event.TopicError, err.Error())
 			return
 		}
+
+		// Successful stream resets the retry counter
+		retries = 0
 
 		if finished {
 			s.setStatus(StatusIdle)
@@ -76,6 +109,22 @@ func (s *Session) runLoop(ctx context.Context) {
 
 		// Not finished means tool_calls -- loop continues
 	}
+}
+
+// retryBackoff computes the wait duration for a rate limit retry.
+// Uses the server's Retry-After if provided, otherwise exponential backoff.
+func retryBackoff(retryAfter time.Duration, attempt int) time.Duration {
+	if retryAfter > 0 {
+		return retryAfter
+	}
+	backoff := initialBackoff
+	for i := 1; i < attempt; i++ {
+		backoff *= 2
+	}
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
+	return backoff
 }
 
 // streamOnce runs one provider stream, processes all events, and returns
@@ -237,6 +286,7 @@ func (s *Session) executeToolCalls(ctx context.Context, assistantMsg *Message) e
 		}, tc.Args)
 
 		tc.End = time.Now()
+		tc.Title = result.Title
 		if result.Error != nil {
 			tc.Status = ToolError
 			tc.Error = result.Error.Error()
