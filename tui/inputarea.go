@@ -13,6 +13,11 @@ type InputArea struct {
 	focused  bool
 	onSubmit func(string) // called when user presses Enter
 
+	// History
+	history    []string // previously submitted messages
+	historyIdx int      // current position in history (-1 = not browsing)
+	draft      string   // saves in-progress text when entering history mode
+
 	// Visual state
 	prompt    string
 	hintText  string
@@ -22,9 +27,10 @@ type InputArea struct {
 // NewInputArea creates a new input area.
 func NewInputArea() *InputArea {
 	return &InputArea{
-		lines:    [][]rune{{}},
-		prompt:   "> ",
-		hintText: "Enter=send  Alt+Enter=newline  Ctrl+C=exit",
+		lines:      [][]rune{{}},
+		historyIdx: -1,
+		prompt:     "> ",
+		hintText:   "Enter=send  Alt+Enter=newline  Ctrl+C=exit",
 	}
 }
 
@@ -80,6 +86,9 @@ func (ia *InputArea) Update(ev Event) bool {
 		if strings.TrimSpace(text) == "" {
 			return false
 		}
+		ia.history = append(ia.history, text)
+		ia.historyIdx = -1
+		ia.draft = ""
 		if ia.onSubmit != nil {
 			ia.onSubmit(text)
 		}
@@ -89,6 +98,11 @@ func (ia *InputArea) Update(ev Event) bool {
 	// Newline: Alt+Enter
 	case ke.Key == KeyEnter && ke.Alt:
 		ia.insertNewline()
+		return true
+
+	// Alt+Backspace: delete word backward
+	case ke.Key == KeyBackspace && ke.Alt:
+		ia.deleteWordBackward()
 		return true
 
 	// Backspace
@@ -117,10 +131,18 @@ func (ia *InputArea) Update(ev Event) bool {
 		}
 		return true
 	case ke.Key == KeyUp:
-		ia.moveUp()
+		if ia.cursorY == 0 {
+			ia.historyBack()
+		} else {
+			ia.moveUp()
+		}
 		return true
 	case ke.Key == KeyDown:
-		ia.moveDown()
+		if ia.cursorY == len(ia.lines)-1 {
+			ia.historyForward()
+		} else {
+			ia.moveDown()
+		}
 		return true
 
 	// Home/End
@@ -130,6 +152,23 @@ func (ia *InputArea) Update(ev Event) bool {
 	case ke.Key == KeyEnd:
 		ia.cursorX = len(ia.lines[ia.cursorY])
 		return true
+
+	// Escape: clear input
+	case ke.Key == KeyEscape:
+		ia.Clear()
+		return true
+
+	// Alt+letter bindings
+	case ke.Key == KeyRune && ke.Alt:
+		switch ke.Rune {
+		case 'b': // back a word
+			ia.moveWordLeft()
+			return true
+		case 'f': // forward a word
+			ia.moveWordRight()
+			return true
+		}
+		return false
 
 	// Ctrl bindings
 	case ke.Ctrl:
@@ -393,4 +432,44 @@ func (ia *InputArea) deleteWordBackward() {
 		ia.cursorX--
 	}
 	ia.lines[ia.cursorY] = append(line[:ia.cursorX], line[end:]...)
+}
+
+// --- History ---
+
+func (ia *InputArea) historyBack() {
+	if len(ia.history) == 0 {
+		return
+	}
+	if ia.historyIdx == -1 {
+		ia.draft = ia.Text()
+		ia.historyIdx = len(ia.history) - 1
+	} else if ia.historyIdx > 0 {
+		ia.historyIdx--
+	}
+	ia.loadText(ia.history[ia.historyIdx])
+}
+
+func (ia *InputArea) historyForward() {
+	if ia.historyIdx == -1 {
+		return
+	}
+	ia.historyIdx++
+	if ia.historyIdx >= len(ia.history) {
+		ia.historyIdx = -1
+		ia.loadText(ia.draft)
+		ia.draft = ""
+	} else {
+		ia.loadText(ia.history[ia.historyIdx])
+	}
+}
+
+func (ia *InputArea) loadText(s string) {
+	parts := strings.Split(s, "\n")
+	ia.lines = make([][]rune, len(parts))
+	for i, p := range parts {
+		ia.lines[i] = []rune(p)
+	}
+	ia.cursorY = len(ia.lines) - 1
+	ia.cursorX = len(ia.lines[ia.cursorY])
+	ia.scrollOff = 0
 }

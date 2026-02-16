@@ -95,6 +95,12 @@ func parseEscape(data []byte, events chan<- Event) int {
 		return 0
 	}
 
+	// Alt+Backspace: ESC followed by DEL (0x7f)
+	if data[1] == 0x7f {
+		events <- KeyEvent{Key: KeyBackspace, Alt: true}
+		return 2
+	}
+
 	// Alt+letter: ESC followed by printable char
 	if data[1] >= 0x20 && data[1] < 0x7f && data[1] != '[' && data[1] != 'O' {
 		// Alt+Enter is ESC followed by CR

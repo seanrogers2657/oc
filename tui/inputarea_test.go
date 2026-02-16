@@ -302,6 +302,54 @@ func TestInputAreaWordMovement(t *testing.T) {
 	}
 }
 
+func TestInputAreaAltB(t *testing.T) {
+	ia := newTestInputArea()
+	sendRunes(ia, "hello world")
+	ia.Update(KeyEvent{Key: KeyRune, Rune: 'b', Alt: true})
+	if ia.cursorX != 6 {
+		t.Fatalf("Alt+B: cursorX = %d, want 6", ia.cursorX)
+	}
+	ia.Update(KeyEvent{Key: KeyRune, Rune: 'b', Alt: true})
+	if ia.cursorX != 0 {
+		t.Fatalf("Alt+B x2: cursorX = %d, want 0", ia.cursorX)
+	}
+}
+
+func TestInputAreaAltF(t *testing.T) {
+	ia := newTestInputArea()
+	sendRunes(ia, "hello world")
+	ia.cursorX = 0
+	ia.Update(KeyEvent{Key: KeyRune, Rune: 'f', Alt: true})
+	if ia.cursorX != 6 {
+		t.Fatalf("Alt+F: cursorX = %d, want 6", ia.cursorX)
+	}
+	ia.Update(KeyEvent{Key: KeyRune, Rune: 'f', Alt: true})
+	if ia.cursorX != 11 {
+		t.Fatalf("Alt+F x2: cursorX = %d, want 11", ia.cursorX)
+	}
+}
+
+func TestInputAreaEscapeClearsInput(t *testing.T) {
+	ia := newTestInputArea()
+	sendRunes(ia, "hello world")
+	ia.Update(KeyEvent{Key: KeyEscape})
+	if ia.Text() != "" {
+		t.Fatalf("Escape: Text() = %q, want empty", ia.Text())
+	}
+	if ia.cursorX != 0 || ia.cursorY != 0 {
+		t.Fatalf("Escape: cursor = (%d,%d), want (0,0)", ia.cursorX, ia.cursorY)
+	}
+}
+
+func TestInputAreaAltBackspace(t *testing.T) {
+	ia := newTestInputArea()
+	sendRunes(ia, "hello world")
+	ia.Update(KeyEvent{Key: KeyBackspace, Alt: true})
+	if ia.Text() != "hello " {
+		t.Fatalf("Alt+Backspace: Text() = %q, want %q", ia.Text(), "hello ")
+	}
+}
+
 func TestInputAreaTab(t *testing.T) {
 	ia := newTestInputArea()
 	sendKey(ia, KeyTab)
@@ -371,5 +419,123 @@ func TestInputAreaNewlineInMiddle(t *testing.T) {
 	}
 	if ia.cursorY != 1 || ia.cursorX != 0 {
 		t.Fatalf("cursor = (%d,%d), want (0,1)", ia.cursorX, ia.cursorY)
+	}
+}
+
+// submitText is a helper that types text and presses Enter to submit it.
+func submitText(ia *InputArea, s string) {
+	sendRunes(ia, s)
+	sendKey(ia, KeyEnter)
+}
+
+func TestInputAreaHistoryUp(t *testing.T) {
+	ia := newTestInputArea()
+	ia.onSubmit = func(string) {}
+
+	submitText(ia, "first")
+	submitText(ia, "second")
+	submitText(ia, "third")
+
+	sendKey(ia, KeyUp) // -> "third"
+	if ia.Text() != "third" {
+		t.Fatalf("Up 1: Text() = %q, want %q", ia.Text(), "third")
+	}
+	sendKey(ia, KeyUp) // -> "second"
+	if ia.Text() != "second" {
+		t.Fatalf("Up 2: Text() = %q, want %q", ia.Text(), "second")
+	}
+	sendKey(ia, KeyUp) // -> "first"
+	if ia.Text() != "first" {
+		t.Fatalf("Up 3: Text() = %q, want %q", ia.Text(), "first")
+	}
+}
+
+func TestInputAreaHistoryDown(t *testing.T) {
+	ia := newTestInputArea()
+	ia.onSubmit = func(string) {}
+
+	submitText(ia, "first")
+	submitText(ia, "second")
+
+	sendKey(ia, KeyUp) // -> "second"
+	sendKey(ia, KeyUp) // -> "first"
+	sendKey(ia, KeyDown) // -> "second"
+	if ia.Text() != "second" {
+		t.Fatalf("Down: Text() = %q, want %q", ia.Text(), "second")
+	}
+	sendKey(ia, KeyDown) // -> back to empty (draft)
+	if ia.Text() != "" {
+		t.Fatalf("Down past end: Text() = %q, want empty", ia.Text())
+	}
+}
+
+func TestInputAreaHistoryDraftPreserved(t *testing.T) {
+	ia := newTestInputArea()
+	ia.onSubmit = func(string) {}
+
+	submitText(ia, "old message")
+
+	// Type partial text without submitting
+	sendRunes(ia, "work in progress")
+	sendKey(ia, KeyUp) // -> "old message"
+	if ia.Text() != "old message" {
+		t.Fatalf("Up: Text() = %q, want %q", ia.Text(), "old message")
+	}
+	sendKey(ia, KeyDown) // -> restore draft
+	if ia.Text() != "work in progress" {
+		t.Fatalf("Down (draft): Text() = %q, want %q", ia.Text(), "work in progress")
+	}
+}
+
+func TestInputAreaHistoryUpAtBound(t *testing.T) {
+	ia := newTestInputArea()
+	ia.onSubmit = func(string) {}
+
+	submitText(ia, "only")
+
+	sendKey(ia, KeyUp) // -> "only"
+	sendKey(ia, KeyUp) // -> still "only" (clamped)
+	sendKey(ia, KeyUp) // -> still "only"
+	if ia.Text() != "only" {
+		t.Fatalf("Up at bound: Text() = %q, want %q", ia.Text(), "only")
+	}
+}
+
+func TestInputAreaHistoryMultiLineUpDown(t *testing.T) {
+	ia := newTestInputArea()
+	ia.onSubmit = func(string) {}
+
+	submitText(ia, "previous")
+
+	// Type multi-line input
+	sendRunes(ia, "line1")
+	ia.Update(KeyEvent{Key: KeyEnter, Alt: true}) // newline
+	sendRunes(ia, "line2")
+
+	// Cursor is on line 2 (last line). Up should move to line 1, not history.
+	sendKey(ia, KeyUp)
+	if ia.cursorY != 0 {
+		t.Fatalf("Up from line2: cursorY = %d, want 0", ia.cursorY)
+	}
+	if ia.Text() != "line1\nline2" {
+		t.Fatalf("Up from line2: Text() = %q, want %q", ia.Text(), "line1\nline2")
+	}
+
+	// Now on line 1 (first line). Up should enter history.
+	sendKey(ia, KeyUp)
+	if ia.Text() != "previous" {
+		t.Fatalf("Up from line1: Text() = %q, want %q", ia.Text(), "previous")
+	}
+
+	// Down should restore draft (multi-line)
+	sendKey(ia, KeyDown)
+	if ia.Text() != "line1\nline2" {
+		t.Fatalf("Down to draft: Text() = %q, want %q", ia.Text(), "line1\nline2")
+	}
+
+	// Cursor should be on last line. Down should be a no-op (already at last line, not in history).
+	sendKey(ia, KeyDown)
+	if ia.Text() != "line1\nline2" {
+		t.Fatalf("Down at bottom: Text() = %q, want %q", ia.Text(), "line1\nline2")
 	}
 }

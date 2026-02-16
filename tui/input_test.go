@@ -231,6 +231,18 @@ func TestInputEscape(t *testing.T) {
 	expectKey(t, events, 0, KeyEscape)
 }
 
+func TestInputAltBackspace(t *testing.T) {
+	// ESC followed by DEL (0x7f)
+	events := collectEvents([]byte{0x1b, 0x7f})
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ke := events[0].(KeyEvent)
+	if ke.Key != KeyBackspace || !ke.Alt {
+		t.Fatalf("expected Alt+Backspace, got %+v", ke)
+	}
+}
+
 func TestInputAltLetter(t *testing.T) {
 	events := collectEvents([]byte{0x1b, 'x'})
 	if len(events) != 1 {
