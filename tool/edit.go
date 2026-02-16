@@ -100,8 +100,83 @@ func (t *EditTool) Execute(ctx Context, argsJSON string) Result {
 	}
 	title += ")"
 
+	// Show a snippet around the edited region, like READ does
+	output := editSnippet(newContent, args.NewString)
+
 	return Result{
-		Output: fmt.Sprintf("Replaced %d occurrence(s) in %s", count, path),
+		Output: output,
 		Title:  title,
 	}
+}
+
+// editSnippet returns line-numbered snippets of content around every
+// occurrence of target, with 3 lines of context on each side.
+// Overlapping or adjacent windows are merged; disjoint ones are
+// separated by a "..." line.
+func editSnippet(content, target string) string {
+	const contextLines = 3
+
+	lines := strings.Split(content, "\n")
+	targetLineSpan := strings.Count(target, "\n")
+
+	// Find every occurrence and build [from, to) windows.
+	type window struct{ from, to int }
+	var windows []window
+
+	searchFrom := 0
+	for {
+		pos := strings.Index(content[searchFrom:], target)
+		if pos < 0 {
+			break
+		}
+		pos += searchFrom
+
+		startLine := strings.Count(content[:pos], "\n")
+		endLine := startLine + targetLineSpan
+
+		from := startLine - contextLines
+		if from < 0 {
+			from = 0
+		}
+		to := endLine + contextLines + 1
+		if to > len(lines) {
+			to = len(lines)
+		}
+
+		windows = append(windows, window{from, to})
+		searchFrom = pos + len(target)
+	}
+
+	if len(windows) == 0 {
+		return content
+	}
+
+	// Merge overlapping/adjacent windows.
+	merged := []window{windows[0]}
+	for _, w := range windows[1:] {
+		last := &merged[len(merged)-1]
+		if w.from <= last.to {
+			if w.to > last.to {
+				last.to = w.to
+			}
+		} else {
+			merged = append(merged, w)
+		}
+	}
+
+	// Render each window, separated by "...".
+	var b strings.Builder
+	for i, w := range merged {
+		if i > 0 {
+			b.WriteString("   ...\n")
+		}
+		for j := w.from; j < w.to; j++ {
+			line := lines[j]
+			if len(line) > 2000 {
+				line = line[:2000] + "..."
+			}
+			fmt.Fprintf(&b, "%6d  %s\n", j+1, line)
+		}
+	}
+	return b.String()
 }

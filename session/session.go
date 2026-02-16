@@ -38,11 +38,20 @@ type Session struct {
 }
 
 // GetMessages returns a snapshot of the conversation history.
+// Parts slices are deep-copied so the caller cannot observe
+// mid-mutation state from the session goroutine.
 func (s *Session) GetMessages() []Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Message, len(s.messages))
 	copy(out, s.messages)
+	for i, msg := range out {
+		if len(msg.Parts) > 0 {
+			parts := make([]Part, len(msg.Parts))
+			copy(parts, msg.Parts)
+			out[i].Parts = parts
+		}
+	}
 	return out
 }
 
@@ -67,12 +76,21 @@ func (s *Session) addMessage(msg Message) {
 	s.messages = append(s.messages, msg)
 }
 
-// updateLastMessage replaces the last message.
-func (s *Session) updateLastMessage(msg Message) {
+// updateMessage finds the message by ID and replaces it,
+// deep-copying Parts to break backing-array sharing with the caller.
+func (s *Session) updateMessage(msg Message) {
+	if len(msg.Parts) > 0 {
+		parts := make([]Part, len(msg.Parts))
+		copy(parts, msg.Parts)
+		msg.Parts = parts
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.messages) > 0 {
-		s.messages[len(s.messages)-1] = msg
+	for i := len(s.messages) - 1; i >= 0; i-- {
+		if s.messages[i].ID == msg.ID {
+			s.messages[i] = msg
+			return
+		}
 	}
 }
 

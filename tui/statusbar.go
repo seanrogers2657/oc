@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // StatusBar displays model info, token count, and session status.
@@ -104,7 +105,7 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 	}
 
 	if right != "" {
-		rx := bounds.X + bounds.Width - len(right) - 1
+		rx := bounds.X + bounds.Width - utf8.RuneCountInString(right) - 1
 		if rx > x {
 			buf.WriteString(rx, bounds.Y, right, bgStyle)
 		}

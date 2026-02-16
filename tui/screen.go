@@ -171,33 +171,38 @@ func (b *ScreenBuffer) WriteWrapped(bounds Rect, text string, s Style) int {
 }
 
 // Diff produces ANSI escape codes that transform prev into b.
-// Only changed cells emit output. This is the core of flicker-free rendering.
+// Row-level granularity: once the first changed cell on a row is found,
+// the rest of the row is rewritten to ensure stale characters are erased.
 func (b *ScreenBuffer) Diff(prev *ScreenBuffer) string {
 	var out strings.Builder
 	out.Grow(b.Width * b.Height) // rough estimate
 
 	var lastStyle Style
 	styleActive := false
-	lastX, lastY := -1, -1
 
 	for y := 0; y < b.Height; y++ {
+		// Find the first changed cell on this row.
+		startX := -1
 		for x := 0; x < b.Width; x++ {
 			cell := b.Cells[y][x]
-
-			// Skip if unchanged from prev
 			if prev != nil && y < prev.Height && x < prev.Width {
 				pc := prev.Cells[y][x]
 				if pc.Rune == cell.Rune && pc.Style == cell.Style {
 					continue
 				}
 			}
+			startX = x
+			break
+		}
+		if startX < 0 {
+			continue // entire row unchanged
+		}
 
-			// Move cursor if not sequential
-			if y != lastY || x != lastX+1 {
-				out.WriteString(CursorTo(x, y))
-			}
+		// Write from startX through end of row so trailing chars are erased.
+		out.WriteString(CursorTo(startX, y))
+		for x := startX; x < b.Width; x++ {
+			cell := b.Cells[y][x]
 
-			// Update style if changed
 			if !styleActive || cell.Style != lastStyle {
 				out.WriteString(ResetStyle)
 				ansi := StyleToANSI(cell.Style)
@@ -208,7 +213,6 @@ func (b *ScreenBuffer) Diff(prev *ScreenBuffer) string {
 				styleActive = true
 			}
 
-			// Write the rune
 			if cell.Rune == 0 {
 				out.WriteByte(' ')
 			} else {
@@ -216,9 +220,6 @@ func (b *ScreenBuffer) Diff(prev *ScreenBuffer) string {
 				n := utf8.EncodeRune(buf[:], cell.Rune)
 				out.Write(buf[:n])
 			}
-
-			lastX = x
-			lastY = y
 		}
 	}
 

@@ -159,16 +159,16 @@ func (s *Session) streamOnce(ctx context.Context) (bool, error) {
 		switch ev.Type {
 		case provider.EventText:
 			assistantMsg = s.appendText(&assistantMsg, ev.Text)
-			s.updateLastMessage(assistantMsg)
+			s.updateMessage(assistantMsg)
 			s.deps.Events.Publish(event.TopicPartDelta, ev.Text)
 
 		case provider.EventReasoningStart:
 			assistantMsg.Parts = append(assistantMsg.Parts, ReasoningPart{})
-			s.updateLastMessage(assistantMsg)
+			s.updateMessage(assistantMsg)
 
 		case provider.EventReasoningDelta:
 			assistantMsg = s.appendReasoning(&assistantMsg, ev.Text)
-			s.updateLastMessage(assistantMsg)
+			s.updateMessage(assistantMsg)
 
 		case provider.EventReasoningEnd:
 			s.deps.Events.Publish(event.TopicPartDone, "reasoning")
@@ -204,7 +204,7 @@ func (s *Session) streamOnce(ctx context.Context) (bool, error) {
 					Status: ToolPending,
 				}
 				assistantMsg.Parts = append(assistantMsg.Parts, part)
-				s.updateLastMessage(assistantMsg)
+				s.updateMessage(assistantMsg)
 			}
 
 		case provider.EventDone:
@@ -217,12 +217,12 @@ func (s *Session) streamOnce(ctx context.Context) (bool, error) {
 				s.tokens.TotalTokens += ev.Usage.TotalTokens
 				s.mu.Unlock()
 			}
-			s.updateLastMessage(assistantMsg)
+			s.updateMessage(assistantMsg)
 
 		case provider.EventError:
 			if ev.Error != nil {
 				assistantMsg.Error = ev.Error
-				s.updateLastMessage(assistantMsg)
+				s.updateMessage(assistantMsg)
 				return false, ev.Error
 			}
 		}
@@ -254,7 +254,7 @@ func (s *Session) executeToolCalls(ctx context.Context, assistantMsg *Message) e
 		tc.Status = ToolRunning
 		tc.Start = time.Now()
 		assistantMsg.Parts[i] = tc
-		s.updateLastMessage(*assistantMsg)
+		s.updateMessage(*assistantMsg)
 		s.deps.Events.Publish(event.TopicToolStart, tc.Tool)
 
 		// Execute the tool
@@ -264,7 +264,7 @@ func (s *Session) executeToolCalls(ctx context.Context, assistantMsg *Message) e
 			tc.Error = fmt.Sprintf("unknown tool: %s", tc.Tool)
 			tc.End = time.Now()
 			assistantMsg.Parts[i] = tc
-			s.updateLastMessage(*assistantMsg)
+			s.updateMessage(*assistantMsg)
 			s.deps.Events.Publish(event.TopicToolDone, tc.Tool)
 
 			// Append error as tool result message
@@ -296,7 +296,7 @@ func (s *Session) executeToolCalls(ctx context.Context, assistantMsg *Message) e
 			tc.Output = result.Output
 		}
 		assistantMsg.Parts[i] = tc
-		s.updateLastMessage(*assistantMsg)
+		s.updateMessage(*assistantMsg)
 		s.deps.Events.Publish(event.TopicToolDone, tc.Tool)
 
 		// Append tool result to history

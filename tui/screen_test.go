@@ -262,6 +262,71 @@ func TestScreenBufferDiffNilPrev(t *testing.T) {
 	}
 }
 
+func TestScreenBufferDiffWritesFullRowFromChange(t *testing.T) {
+	// When a cell changes on a row, the diff must write through the
+	// end of that row so that stale characters after the change are erased.
+	prev := NewScreenBuffer(10, 3)
+	prev.WriteString(0, 1, "ABCDEFGHIJ", Style{Bold: true})
+
+	buf := NewScreenBuffer(10, 3)
+	buf.WriteString(0, 1, "XY", Style{})
+	// Columns 2-9 are default spaces from NewScreenBuffer.
+
+	diff := buf.Diff(prev)
+
+	// The diff must contain "XY" AND enough spaces to overwrite "CDEFGHIJ".
+	// Count characters written for row 1 by looking for the row's content.
+	// The diff should rewrite from the first changed cell (col 0) through col 9.
+	if !strings.Contains(diff, "XY") {
+		t.Fatal("diff should contain new content 'XY'")
+	}
+
+	// Apply the diff by parsing: the row should now be "XY        " (XY + 8 spaces).
+	// Simplest check: the diff must contain at least 10 rune-writes for row 1.
+	// Since the entire row from col 0 is rewritten, we can verify by counting
+	// non-escape printable characters on that row.
+	//
+	// Better approach: apply the diff to prev and check the resulting state
+	// by simulating. Instead, just verify the trailing characters are present
+	// by checking the diff contains spaces after XY.
+	afterXY := strings.Index(diff, "XY")
+	if afterXY < 0 {
+		t.Fatal("XY not found in diff")
+	}
+	// After "XY" in the diff output, there should be space characters
+	// (the rest of the row), possibly interspersed with style escapes.
+	remainder := diff[afterXY+2:]
+	spaceCount := strings.Count(remainder, " ")
+	if spaceCount < 8 {
+		t.Fatalf("expected at least 8 trailing spaces in diff to clear row, got %d", spaceCount)
+	}
+}
+
+func TestScreenBufferDiffSkipsUnchangedRows(t *testing.T) {
+	prev := NewScreenBuffer(10, 3)
+	prev.WriteString(0, 0, "unchanged", Style{})
+	prev.WriteString(0, 2, "also same", Style{})
+
+	buf := NewScreenBuffer(10, 3)
+	buf.WriteString(0, 0, "unchanged", Style{})
+	buf.WriteString(0, 1, "new", Style{}) // only row 1 changed
+	buf.WriteString(0, 2, "also same", Style{})
+
+	diff := buf.Diff(prev)
+
+	// Should contain the new content
+	if !strings.Contains(diff, "new") {
+		t.Fatal("diff should contain 'new'")
+	}
+	// Should NOT contain content from unchanged rows
+	if strings.Contains(diff, "unchanged") {
+		t.Fatal("diff should not rewrite unchanged rows")
+	}
+	if strings.Contains(diff, "also same") {
+		t.Fatal("diff should not rewrite unchanged rows")
+	}
+}
+
 func cellsToString(cells []Cell) string {
 	var b strings.Builder
 	for _, c := range cells {

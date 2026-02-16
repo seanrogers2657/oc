@@ -91,7 +91,7 @@ func (t *ReadTool) Execute(ctx Context, argsJSON string) Result {
 		if len(line) > 2000 {
 			line = line[:2000] + "..."
 		}
-		fmt.Fprintf(&b, "%6d\t%s\n", i+1, line)
+		fmt.Fprintf(&b, "%6d  %s\n", i+1, line)
 	}
 
 	totalLines := len(lines)

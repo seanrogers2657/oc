@@ -157,6 +157,88 @@ func TestSessionStatusTransitions(t *testing.T) {
 	}
 }
 
+func TestUpdateMessageByID(t *testing.T) {
+	store := NewStore()
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
+
+	s.addMessage(Message{ID: "msg_1", Role: provider.RoleUser, Parts: []Part{TextPart{Text: "first"}}})
+	s.addMessage(Message{ID: "msg_2", Role: provider.RoleAssistant, Parts: []Part{TextPart{Text: "second"}}})
+	s.addMessage(Message{ID: "msg_3", Role: provider.RoleTool, Parts: []Part{TextPart{Text: "third"}}})
+
+	// Update the middle message by ID
+	s.updateMessage(Message{ID: "msg_2", Role: provider.RoleAssistant, Parts: []Part{TextPart{Text: "updated"}}})
+
+	msgs := s.GetMessages()
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(msgs))
+	}
+	text := extractText(msgs[1].Parts)
+	if text != "updated" {
+		t.Fatalf("expected 'updated', got %q", text)
+	}
+	// Other messages should be untouched
+	if extractText(msgs[0].Parts) != "first" {
+		t.Fatal("msg_1 should be unchanged")
+	}
+	if extractText(msgs[2].Parts) != "third" {
+		t.Fatal("msg_3 should be unchanged")
+	}
+}
+
+func TestUpdateMessagePartsIsolation(t *testing.T) {
+	store := NewStore()
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
+
+	msg := Message{ID: "msg_1", Role: provider.RoleAssistant, Parts: []Part{TextPart{Text: "original"}}}
+	s.addMessage(msg)
+
+	// Update via updateMessage
+	msg.Parts = []Part{TextPart{Text: "snapshot"}}
+	s.updateMessage(msg)
+
+	// Mutate the caller's Parts after updateMessage
+	msg.Parts[0] = TextPart{Text: "mutated by caller"}
+
+	// The stored message should still have "snapshot"
+	msgs := s.GetMessages()
+	text := extractText(msgs[0].Parts)
+	if text != "snapshot" {
+		t.Fatalf("expected stored text 'snapshot', got %q (caller mutation leaked)", text)
+	}
+}
+
+func TestUpdateMessageConcurrentAccess(t *testing.T) {
+	store := NewStore()
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
+
+	s.addMessage(Message{ID: "msg_1", Role: provider.RoleAssistant, Parts: []Part{TextPart{Text: "init"}}})
+
+	done := make(chan struct{})
+	// Writer goroutine: repeatedly update the message
+	go func() {
+		defer close(done)
+		for i := 0; i < 1000; i++ {
+			s.updateMessage(Message{
+				ID:    "msg_1",
+				Role:  provider.RoleAssistant,
+				Parts: []Part{TextPart{Text: fmt.Sprintf("v%d", i)}},
+			})
+		}
+	}()
+
+	// Reader goroutine: repeatedly snapshot messages
+	for i := 0; i < 1000; i++ {
+		msgs := s.GetMessages()
+		if len(msgs) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(msgs))
+		}
+		// Access parts to trigger race detector if sharing exists
+		_ = extractText(msgs[0].Parts)
+	}
+
+	<-done
+}
+
 func TestUniqueSessionIDs(t *testing.T) {
 	store := NewStore()
 	s1 := store.Create(Deps{}, provider.ModelConfig{}, "")

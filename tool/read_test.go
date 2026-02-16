@@ -41,8 +41,8 @@ func TestReadBasic(t *testing.T) {
 	if !strings.Contains(r.Output, "line3") {
 		t.Error("expected line3 in output")
 	}
-	// Line numbers should be present
-	if !strings.Contains(r.Output, "1\t") {
+	// Line numbers should be present (format: "     1  content")
+	if !strings.Contains(r.Output, "     1  ") {
 		t.Error("expected line numbers")
 	}
 }
@@ -62,7 +62,7 @@ func TestReadWithOffset(t *testing.T) {
 	if !strings.Contains(r.Output, "d") {
 		t.Error("expected line 'd'")
 	}
-	if strings.Contains(r.Output, "\ta\n") {
+	if strings.Contains(r.Output, "  a\n") {
 		t.Error("should not contain line 'a'")
 	}
 }

@@ -704,3 +704,91 @@ func TestLoopRetryRespectsCancel(t *testing.T) {
 		t.Errorf("expected at most 2 calls before cancel, got %d", calls)
 	}
 }
+
+func TestLoopWithMultipleToolCalls(t *testing.T) {
+	// Model returns two tool calls in a single response, then a final text response.
+	// Verifies no message clobbering: message list should be
+	// [user, assistant(tool_calls), toolResult1, toolResult2, assistant(final)]
+	callCount := 0
+	mp := &mockProvider{
+		streamFn: func(msgs []provider.Message, _ []provider.ToolDef) <-chan provider.StreamEvent {
+			ch := make(chan provider.StreamEvent, 15)
+			go func() {
+				callCount++
+				if callCount == 1 {
+					ch <- provider.StreamEvent{Type: provider.EventText, Text: "I'll use two tools."}
+					ch <- provider.StreamEvent{Type: provider.EventToolCallStart, ToolCall: &provider.ToolCall{ID: "call_a", Name: "alpha"}}
+					ch <- provider.StreamEvent{Type: provider.EventToolCallDelta, ToolCall: &provider.ToolCall{ID: "call_a", Args: `{"x":1}`}}
+					ch <- provider.StreamEvent{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{ID: "call_a", Name: "alpha", Args: `{"x":1}`}}
+					ch <- provider.StreamEvent{Type: provider.EventToolCallStart, ToolCall: &provider.ToolCall{ID: "call_b", Name: "beta"}}
+					ch <- provider.StreamEvent{Type: provider.EventToolCallDelta, ToolCall: &provider.ToolCall{ID: "call_b", Args: `{"y":2}`}}
+					ch <- provider.StreamEvent{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{ID: "call_b", Name: "beta", Args: `{"y":2}`}}
+					ch <- provider.StreamEvent{Type: provider.EventDone, FinishReason: "tool_calls", Usage: &provider.Usage{InputTokens: 10, OutputTokens: 20, TotalTokens: 30}}
+				} else {
+					ch <- provider.StreamEvent{Type: provider.EventText, Text: "All done."}
+					ch <- provider.StreamEvent{Type: provider.EventDone, FinishReason: "stop", Usage: &provider.Usage{InputTokens: 20, OutputTokens: 5, TotalTokens: 25}}
+				}
+				close(ch)
+			}()
+			return ch
+		},
+	}
+
+	te := &mockToolExecutor{
+		tools: map[string]tool.Tool{
+			"alpha": &mockTool{name: "alpha", result: tool.Result{Output: "alpha result", Title: "alpha"}},
+			"beta":  &mockTool{name: "beta", result: tool.Result{Output: "beta result", Title: "beta"}},
+		},
+	}
+
+	s, _ := newTestSession(mp, te)
+	s.Send(context.Background(), "use both tools")
+
+	if !waitForIdle(s, 2*time.Second) {
+		t.Fatal("session did not return to idle")
+	}
+
+	msgs := s.GetMessages()
+
+	// Expected: user, assistant(tool calls), tool result 1, tool result 2, assistant(final)
+	if len(msgs) != 5 {
+		var roles []string
+		for _, m := range msgs {
+			roles = append(roles, string(m.Role))
+		}
+		t.Fatalf("expected 5 messages, got %d: %v", len(msgs), roles)
+	}
+
+	if msgs[0].Role != provider.RoleUser {
+		t.Errorf("msgs[0]: expected user, got %s", msgs[0].Role)
+	}
+	if msgs[1].Role != provider.RoleAssistant {
+		t.Errorf("msgs[1]: expected assistant, got %s", msgs[1].Role)
+	}
+	if msgs[2].Role != provider.RoleTool {
+		t.Errorf("msgs[2]: expected tool, got %s", msgs[2].Role)
+	}
+	if msgs[3].Role != provider.RoleTool {
+		t.Errorf("msgs[3]: expected tool, got %s", msgs[3].Role)
+	}
+	if msgs[4].Role != provider.RoleAssistant {
+		t.Errorf("msgs[4]: expected assistant, got %s", msgs[4].Role)
+	}
+
+	// Verify no duplicate assistant IDs (clobbering would duplicate the first assistant msg)
+	seen := map[string]int{}
+	for i, m := range msgs {
+		if m.Role == provider.RoleAssistant {
+			seen[m.ID]++
+			if seen[m.ID] > 1 {
+				t.Errorf("duplicate assistant message ID %q at index %d", m.ID, i)
+			}
+		}
+	}
+
+	// Verify final message text
+	finalText := extractText(msgs[4].Parts)
+	if finalText != "All done." {
+		t.Errorf("expected final text 'All done.', got %q", finalText)
+	}
+}

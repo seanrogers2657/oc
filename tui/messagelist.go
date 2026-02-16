@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"github.com/srogers/oc/event"
 	"github.com/srogers/oc/markdown"
 	"github.com/srogers/oc/provider"
@@ -265,7 +268,8 @@ func mdLineToRendered(line markdown.Line, maxWidth int) []renderedLine {
 		}
 
 		remaining := span.Text
-		for remaining != "" {
+		remainLen := utf8.RuneCountInString(remaining)
+		for remainLen > 0 {
 			avail := maxWidth - cx
 			if avail <= 0 {
 				// Wrap: emit current row and start new one
@@ -275,14 +279,16 @@ func mdLineToRendered(line markdown.Line, maxWidth int) []renderedLine {
 				avail = maxWidth - cx
 			}
 
-			if len(remaining) <= avail {
+			if remainLen <= avail {
 				currentRow = append(currentRow, styledSpan{text: remaining, style: style})
-				cx += len(remaining)
+				cx += remainLen
 				remaining = ""
+				remainLen = 0
 			} else {
-				chunk := remaining[:avail]
+				chunk := truncateRunes(remaining, avail)
 				currentRow = append(currentRow, styledSpan{text: chunk, style: style})
-				remaining = remaining[avail:]
+				remaining = remaining[len(chunk):]
+				remainLen -= avail
 				// Emit this row
 				spans = append(spans, currentRow...)
 				currentRow = nil
@@ -308,7 +314,7 @@ func mdLineToRendered(line markdown.Line, maxWidth int) []renderedLine {
 	rowWidth := 0
 
 	for _, s := range spans {
-		sLen := len(s.text)
+		sLen := utf8.RuneCountInString(s.text)
 		if rowWidth+sLen > maxWidth && rowWidth > 0 {
 			result = append(result, renderedLine{spans: rowSpans})
 			rowSpans = nil
@@ -397,7 +403,9 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 	return lines
 }
 
-// wrapText splits text into lines of at most maxWidth characters.
+// wrapText splits text into lines of at most maxWidth display columns.
+// Tab characters are expanded to spaces (4-column tab stops) so they
+// occupy the correct number of display columns.
 func wrapText(text string, maxWidth int) []string {
 	if maxWidth <= 0 {
 		maxWidth = 80
@@ -405,19 +413,43 @@ func wrapText(text string, maxWidth int) []string {
 
 	var result []string
 	for _, line := range splitLines(text) {
-		if len(line) <= maxWidth {
+		line = expandTabs(line, 4)
+		runes := []rune(line)
+		if len(runes) <= maxWidth {
 			result = append(result, line)
 		} else {
-			for len(line) > maxWidth {
-				result = append(result, line[:maxWidth])
-				line = line[maxWidth:]
+			for len(runes) > maxWidth {
+				result = append(result, string(runes[:maxWidth]))
+				runes = runes[maxWidth:]
 			}
-			if line != "" {
-				result = append(result, line)
+			if len(runes) > 0 {
+				result = append(result, string(runes))
 			}
 		}
 	}
 	return result
+}
+
+// expandTabs replaces tab characters with spaces aligned to tabWidth-column stops.
+func expandTabs(s string, tabWidth int) string {
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+	var b strings.Builder
+	col := 0
+	for _, r := range s {
+		if r == '\t' {
+			spaces := tabWidth - (col % tabWidth)
+			for i := 0; i < spaces; i++ {
+				b.WriteByte(' ')
+			}
+			col += spaces
+		} else {
+			b.WriteRune(r)
+			col++
+		}
+	}
+	return b.String()
 }
 
 // splitLines splits on \n, like strings.Split but handles empty.
@@ -435,6 +467,18 @@ func splitLines(s string) []string {
 	}
 	lines = append(lines, s[start:])
 	return lines
+}
+
+// truncateRunes returns the first n runes of s.
+func truncateRunes(s string, n int) string {
+	i := 0
+	for idx := range s {
+		if i >= n {
+			return s[:idx]
+		}
+		i++
+	}
+	return s
 }
 
 // itoa converts int to string without importing strconv.
