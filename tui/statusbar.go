@@ -1,6 +1,11 @@
 package tui
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 // StatusBar displays model info, token count, and session status.
 type StatusBar struct {
@@ -78,6 +83,14 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 		x += buf.WriteString(x, bounds.Y, " ", bgStyle)
 	}
 
+	// Working directory
+	if info.WorkingDir != "" {
+		dir := shortenHome(info.WorkingDir)
+		dirStyle := Style{BG: NewColor(30, 30, 30), FG: NewColor(150, 150, 100)}
+		x += buf.WriteString(x, bounds.Y, dir, dirStyle)
+		x += buf.WriteString(x, bounds.Y, " ", bgStyle)
+	}
+
 	// Right-aligned: tokens and cost
 	right := ""
 	if info.Tokens > 0 {
@@ -96,4 +109,19 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 			buf.WriteString(rx, bounds.Y, right, bgStyle)
 		}
 	}
+}
+
+// shortenHome replaces the user's home directory prefix with "~".
+func shortenHome(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Base(path)
+	}
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+string(filepath.Separator)) {
+		return "~" + path[len(home):]
+	}
+	return path
 }

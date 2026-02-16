@@ -105,6 +105,12 @@ func run(c *cli.Context) error {
 		modelCfg.MaxTokens = &m
 	}
 
+	// Capture working directory from invocation
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getwd: %w", err)
+	}
+
 	// Create session
 	bus := event.NewBus()
 	store := session.NewStore()
@@ -112,7 +118,7 @@ func run(c *cli.Context) error {
 		Model:  p,
 		Tools:  tools,
 		Events: bus,
-	}, modelCfg)
+	}, modelCfg, workingDir)
 
 	// Create TUI
 	ui := tui.New(tui.Deps{
@@ -128,10 +134,11 @@ func run(c *cli.Context) error {
 			}
 			tokens := sess.GetTokens()
 			return tui.StatusInfo{
-				Model:    cfg.Model,
-				Provider: p.Name(),
-				Status:   status,
-				Tokens:   tokens.TotalTokens,
+				Model:      cfg.Model,
+				Provider:   p.Name(),
+				Status:     status,
+				Tokens:     tokens.TotalTokens,
+				WorkingDir: workingDir,
 			}
 		},
 		Messages: func() []session.Message {

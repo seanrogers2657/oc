@@ -26,14 +26,15 @@ type Deps struct {
 
 // Session holds conversation state and orchestrates the model loop.
 type Session struct {
-	ID       string
-	Config   provider.ModelConfig
-	deps     Deps
-	mu       sync.RWMutex
-	messages []Message
-	status   SessionStatus
-	tokens   provider.Usage
-	cancel   func() // cancel current stream
+	ID         string
+	Config     provider.ModelConfig
+	WorkingDir string // inherited from where oc was invoked
+	deps       Deps
+	mu         sync.RWMutex
+	messages   []Message
+	status     SessionStatus
+	tokens     provider.Usage
+	cancel     func() // cancel current stream
 }
 
 // GetMessages returns a snapshot of the conversation history.
@@ -109,12 +110,13 @@ func NewStore() *Store {
 }
 
 // Create makes a new session with the given dependencies and returns it.
-func (st *Store) Create(deps Deps, config provider.ModelConfig) *Session {
+func (st *Store) Create(deps Deps, config provider.ModelConfig, workingDir string) *Session {
 	id := fmt.Sprintf("session_%d", st.nextID.Add(1))
 	s := &Session{
-		ID:     id,
-		Config: config,
-		deps:   deps,
+		ID:         id,
+		Config:     config,
+		WorkingDir: workingDir,
+		deps:       deps,
 	}
 
 	st.mu.Lock()

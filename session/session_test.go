@@ -9,7 +9,7 @@ import (
 
 func TestStoreCreateAndGet(t *testing.T) {
 	store := NewStore()
-	s := store.Create(Deps{}, provider.ModelConfig{Model: "test-model"})
+	s := store.Create(Deps{}, provider.ModelConfig{Model: "test-model"}, "")
 
 	if s.ID == "" {
 		t.Fatal("session should have an ID")
@@ -26,9 +26,9 @@ func TestStoreCreateAndGet(t *testing.T) {
 
 func TestStoreActive(t *testing.T) {
 	store := NewStore()
-	s1 := store.Create(Deps{}, provider.ModelConfig{Model: "m1"})
+	s1 := store.Create(Deps{}, provider.ModelConfig{Model: "m1"}, "")
 	_ = s1
-	s2 := store.Create(Deps{}, provider.ModelConfig{Model: "m2"})
+	s2 := store.Create(Deps{}, provider.ModelConfig{Model: "m2"}, "")
 
 	active := store.Active()
 	if active != s2 {
@@ -52,7 +52,7 @@ func TestStoreActiveEmpty(t *testing.T) {
 
 func TestSessionInitialStatus(t *testing.T) {
 	store := NewStore()
-	s := store.Create(Deps{}, provider.ModelConfig{})
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
 
 	if s.GetStatus() != StatusIdle {
 		t.Fatalf("expected StatusIdle, got %d", s.GetStatus())
@@ -61,7 +61,7 @@ func TestSessionInitialStatus(t *testing.T) {
 
 func TestSessionGetMessages(t *testing.T) {
 	store := NewStore()
-	s := store.Create(Deps{}, provider.ModelConfig{})
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
 
 	msgs := s.GetMessages()
 	if len(msgs) != 0 {
@@ -86,7 +86,7 @@ func TestSessionGetMessages(t *testing.T) {
 
 func TestSessionGetMessagesReturnsSnapshot(t *testing.T) {
 	store := NewStore()
-	s := store.Create(Deps{}, provider.ModelConfig{})
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
 
 	s.addMessage(Message{ID: "msg_1", Role: provider.RoleUser})
 	snap := s.GetMessages()
@@ -102,7 +102,7 @@ func TestSessionGetMessagesReturnsSnapshot(t *testing.T) {
 
 func TestSessionGetTokens(t *testing.T) {
 	store := NewStore()
-	s := store.Create(Deps{}, provider.ModelConfig{})
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
 
 	tokens := s.GetTokens()
 	if tokens.TotalTokens != 0 {
@@ -112,7 +112,7 @@ func TestSessionGetTokens(t *testing.T) {
 
 func TestSessionAddErrorMessage(t *testing.T) {
 	store := NewStore()
-	s := store.Create(Deps{}, provider.ModelConfig{})
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
 
 	testErr := fmt.Errorf("connection refused")
 	s.addErrorMessage(testErr)
@@ -140,7 +140,7 @@ func TestSessionAddErrorMessage(t *testing.T) {
 
 func TestSessionStatusTransitions(t *testing.T) {
 	store := NewStore()
-	s := store.Create(Deps{}, provider.ModelConfig{})
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
 
 	if s.GetStatus() != StatusIdle {
 		t.Fatalf("expected StatusIdle initially")
@@ -159,8 +159,8 @@ func TestSessionStatusTransitions(t *testing.T) {
 
 func TestUniqueSessionIDs(t *testing.T) {
 	store := NewStore()
-	s1 := store.Create(Deps{}, provider.ModelConfig{})
-	s2 := store.Create(Deps{}, provider.ModelConfig{})
+	s1 := store.Create(Deps{}, provider.ModelConfig{}, "")
+	s2 := store.Create(Deps{}, provider.ModelConfig{}, "")
 	if s1.ID == s2.ID {
 		t.Fatal("session IDs should be unique")
 	}

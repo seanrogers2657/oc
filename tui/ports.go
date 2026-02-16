@@ -14,11 +14,12 @@ type EventSource interface {
 // StatusInfo holds data for the status bar display.
 // Populated by the composition root from session/provider state.
 type StatusInfo struct {
-	Model    string // model ID (e.g. "gpt-4o")
-	Provider string // provider name (e.g. "openai")
-	Status   string // "idle", "busy"
-	Tokens   int    // total tokens used
-	Cost     string // formatted cost string (e.g. "$0.03")
+	Model      string // model ID (e.g. "gpt-4o")
+	Provider   string // provider name (e.g. "openai")
+	Status     string // "idle", "busy"
+	Tokens     int    // total tokens used
+	Cost       string // formatted cost string (e.g. "$0.03")
+	WorkingDir string // working directory path
 }
 
 // StatusProvider returns current status info.

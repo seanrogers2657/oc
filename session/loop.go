@@ -232,7 +232,7 @@ func (s *Session) executeToolCalls(ctx context.Context, assistantMsg *Message) e
 
 		result := t.Execute(tool.Context{
 			SessionID:  s.ID,
-			WorkingDir: ".",
+			WorkingDir: s.WorkingDir,
 			Ctx:        ctx,
 		}, tc.Args)
 

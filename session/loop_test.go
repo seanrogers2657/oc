@@ -68,7 +68,7 @@ func newTestSession(mp *mockProvider, te *mockToolExecutor) (*Session, *event.Bu
 		Model:  mp,
 		Tools:  te,
 		Events: bus,
-	}, provider.ModelConfig{Model: "test-model"})
+	}, provider.ModelConfig{Model: "test-model"}, "")
 	return s, bus
 }
 
@@ -298,7 +298,7 @@ func TestLoopStreamStartError(t *testing.T) {
 		Model:  &errorProvider{err: fmt.Errorf("401 Unauthorized")},
 		Tools:  te,
 		Events: bus,
-	}, provider.ModelConfig{Model: "test-model"})
+	}, provider.ModelConfig{Model: "test-model"}, "")
 
 	s.Send(context.Background(), "trigger stream error")
 
@@ -461,7 +461,7 @@ func TestLoopWithReasoning(t *testing.T) {
 
 func TestBuildProviderMessages(t *testing.T) {
 	store := NewStore()
-	s := store.Create(Deps{}, provider.ModelConfig{})
+	s := store.Create(Deps{}, provider.ModelConfig{}, "")
 
 	s.addMessage(Message{
 		Role:  provider.RoleUser,
