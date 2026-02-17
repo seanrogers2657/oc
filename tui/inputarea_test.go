@@ -231,18 +231,6 @@ func TestInputAreaCtrlE(t *testing.T) {
 	}
 }
 
-func TestInputAreaCtrlK(t *testing.T) {
-	ia := newTestInputArea()
-	sendRunes(ia, "hello world")
-	// Move to position 5
-	ia.cursorX = 5
-	sendCtrl(ia, 'k')
-
-	if ia.Text() != "hello" {
-		t.Fatalf("Ctrl+K: Text() = %q, want %q", ia.Text(), "hello")
-	}
-}
-
 func TestInputAreaCtrlU(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello world")

@@ -38,8 +38,10 @@ func parseInput(data []byte, events chan<- Event) {
 		// Ctrl+key (0x01-0x1a except 0x09 tab, 0x0d enter, 0x08/0x7f backspace)
 		if data[i] < 0x20 {
 			switch data[i] {
-			case 0x0d, 0x0a: // CR or LF
+			case 0x0d: // CR (Enter)
 				events <- KeyEvent{Key: KeyEnter}
+			case 0x0a: // LF (Ctrl+J)
+				events <- KeyEvent{Key: KeyRune, Rune: 'j', Ctrl: true}
 			case 0x09: // Tab
 				events <- KeyEvent{Key: KeyTab}
 			case 0x08: // Backspace (some terminals)
@@ -136,11 +138,6 @@ func parseEscape(data []byte, events chan<- Event) int {
 func parseCSI(data []byte, events chan<- Event) int {
 	if len(data) < 3 {
 		return 0
-	}
-
-	// SGR mouse events: ESC [ < button ; x ; y M/m
-	if data[2] == '<' {
-		return parseSGRMouse(data, events)
 	}
 
 	// Bracketed paste start: ESC [ 2 0 0 ~
@@ -259,72 +256,3 @@ func parseBracketedPaste(data []byte, events chan<- Event) int {
 	return 0
 }
 
-// parseSGRMouse handles SGR mouse sequences: ESC [ < button ; x ; y M/m
-// SGR button encoding:
-//
-//	0 = left button, 1 = middle, 2 = right
-//	32 = motion flag (added during drag)
-//	64 = scroll up, 65 = scroll down
-//
-// Terminator: M = press/motion, m = release
-// Coordinates are 1-based.
-func parseSGRMouse(data []byte, events chan<- Event) int {
-	// data starts at ESC [ <
-	// Find the terminating M or m
-	end := 3
-	for end < len(data) {
-		if data[end] == 'M' || data[end] == 'm' {
-			break
-		}
-		end++
-	}
-	if end >= len(data) {
-		return 0 // incomplete
-	}
-
-	release := data[end] == 'm'
-
-	// Parse "button;x;y" between '<' and terminator
-	params := data[3:end]
-	nums := [3]int{}
-	field := 0
-	for _, b := range params {
-		if b == ';' {
-			field++
-			if field > 2 {
-				break
-			}
-		} else if b >= '0' && b <= '9' {
-			nums[field] = nums[field]*10 + int(b-'0')
-		}
-	}
-	button := nums[0]
-	x := nums[1] - 1 // convert to 0-based
-	y := nums[2] - 1
-
-	baseButton := button & ^32 // strip motion flag
-
-	// Scroll wheel
-	if baseButton == 64 {
-		events <- ScrollEvent{Up: true}
-		return end + 1
-	}
-	if baseButton == 65 {
-		events <- ScrollEvent{Up: false}
-		return end + 1
-	}
-
-	// Left button only (baseButton 0)
-	if baseButton != 0 {
-		return end + 1 // consume but ignore middle/right
-	}
-
-	if release {
-		events <- MouseEvent{Action: MouseRelease, X: x, Y: y}
-	} else if button&32 != 0 {
-		events <- MouseEvent{Action: MouseDrag, X: x, Y: y}
-	} else {
-		events <- MouseEvent{Action: MousePress, X: x, Y: y}
-	}
-	return end + 1
-}

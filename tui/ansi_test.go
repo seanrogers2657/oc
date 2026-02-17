@@ -126,9 +126,7 @@ func TestConstants(t *testing.T) {
 		{"Italic", Italic, "\x1b[3m"},
 		{"Underline", Underline, "\x1b[4m"},
 		{"Strikethrough", Strikethrough, "\x1b[9m"},
-		{"MouseEnable", MouseEnable, "\x1b[?1002h\x1b[?1006h"},
-		{"MouseDisable", MouseDisable, "\x1b[?1006l\x1b[?1002l"},
-		{"BracketedPasteEnable", BracketedPasteEnable, "\x1b[?2004h"},
+{"BracketedPasteEnable", BracketedPasteEnable, "\x1b[?2004h"},
 		{"BracketedPasteDisable", BracketedPasteDisable, "\x1b[?2004l"},
 	}
 	for _, tt := range tests {

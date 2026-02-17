@@ -187,9 +187,6 @@ func (ia *InputArea) Update(ev Event) bool {
 		case 'e': // end of line
 			ia.cursorX = len(ia.lines[ia.cursorY])
 			return true
-		case 'k': // kill to end of line
-			ia.lines[ia.cursorY] = ia.lines[ia.cursorY][:ia.cursorX]
-			return true
 		case 'u': // clear line before cursor
 			ia.lines[ia.cursorY] = ia.lines[ia.cursorY][ia.cursorX:]
 			ia.cursorX = 0

@@ -54,30 +54,6 @@ type CustomEvent struct {
 
 func (CustomEvent) eventType() string { return "custom" }
 
-// ScrollEvent fires when the mouse wheel is scrolled.
-type ScrollEvent struct {
-	Up bool // true = scroll up, false = scroll down
-}
-
-func (ScrollEvent) eventType() string { return "scroll" }
-
-// MouseAction distinguishes press, release, and drag.
-type MouseAction int
-
-const (
-	MousePress   MouseAction = iota
-	MouseRelease
-	MouseDrag
-)
-
-// MouseEvent fires on mouse button press, release, or drag.
-type MouseEvent struct {
-	Action MouseAction
-	X, Y   int // 0-based screen coordinates
-}
-
-func (MouseEvent) eventType() string { return "mouse" }
-
 // TickEvent fires on a timer for animations (spinner, etc).
 type TickEvent struct{}
 

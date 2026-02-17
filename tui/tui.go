@@ -38,18 +38,9 @@ type TUI struct {
 
 	layout Layout
 
-	// Selection state
-	selecting bool // true while mouse button is held
-	selAnchor pos  // where the press started
-	selCursor pos  // current drag position
-	hasSelect bool // true if there's a visible selection
-
 	// Prompt mode state (for tool asking user a question)
 	promptResponse chan<- string // non-nil while awaiting a prompt answer
 }
-
-// pos is a screen coordinate.
-type pos struct{ X, Y int }
 
 // New creates a new TUI with the given dependencies.
 func New(deps Deps) *TUI {
@@ -84,8 +75,8 @@ func (t *TUI) Run(ctx context.Context) error {
 
 	// Setup terminal
 	w := os.Stdout
-	io.WriteString(w, AltScreenEnter+CursorHide+BracketedPasteEnable+MouseEnable+ClearScreen)
-	defer io.WriteString(w, MouseDisable+BracketedPasteDisable+CursorShow+AltScreenExit)
+	io.WriteString(w, AltScreenEnter+CursorHide+BracketedPasteEnable+ClearScreen)
+	defer io.WriteString(w, BracketedPasteDisable+CursorShow+AltScreenExit)
 
 	// Initialize buffers
 	t.current = NewScreenBuffer(t.width, t.height)
@@ -149,9 +140,16 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 			return true
 		}
 
-		// Clear selection on any keypress
-		if t.hasSelect {
-			t.hasSelect = false
+		// Scroll message list with Ctrl+K (up) / Ctrl+J (down)
+		if e.Ctrl && e.Rune == 'k' {
+			t.messageList.ScrollUp(3)
+			t.render()
+			return false
+		}
+		if e.Ctrl && e.Rune == 'j' {
+			t.messageList.ScrollDown(3)
+			t.render()
+			return false
 		}
 
 		// Forward to all components
@@ -173,35 +171,6 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 		io.WriteString(os.Stdout, ClearScreen)
 		t.computeLayout()
 		t.fullRender()
-
-	case MouseEvent:
-		switch e.Action {
-		case MousePress:
-			t.selecting = true
-			t.selAnchor = pos{e.X, e.Y}
-			t.selCursor = t.selAnchor
-			t.hasSelect = false
-			// Clear any existing selection highlight
-			t.render()
-		case MouseDrag:
-			if t.selecting {
-				t.selCursor = pos{e.X, e.Y}
-				t.hasSelect = t.selAnchor != t.selCursor
-				t.render()
-			}
-		case MouseRelease:
-			if t.selecting {
-				t.selCursor = pos{e.X, e.Y}
-				t.selecting = false
-				t.hasSelect = t.selAnchor != t.selCursor
-				t.render()
-			}
-		}
-
-	case ScrollEvent:
-		if t.messageList.Update(ev) {
-			t.render()
-		}
 
 	case CustomEvent:
 		// Handle prompt events
@@ -259,10 +228,6 @@ func (t *TUI) render() {
 	t.messageList.Render(t.next, t.layout.MessageList)
 	t.inputArea.Render(t.next, t.layout.InputArea)
 
-	if t.hasSelect || t.selecting {
-		t.applySelection(t.next)
-	}
-
 	// Compute diff and write to stdout
 	diff := t.next.Diff(t.current)
 	if diff != "" {
@@ -282,51 +247,10 @@ func (t *TUI) fullRender() {
 	t.messageList.Render(t.next, t.layout.MessageList)
 	t.inputArea.Render(t.next, t.layout.InputArea)
 
-	if t.hasSelect || t.selecting {
-		t.applySelection(t.next)
-	}
-
 	io.WriteString(os.Stdout, t.next.FullRender())
 
 	// Swap buffers
 	t.current, t.next = t.next, t.current
-}
-
-// selectionRange returns the start and end positions in reading order.
-func (t *TUI) selectionRange() (start, end pos) {
-	a, b := t.selAnchor, t.selCursor
-	if b.Y < a.Y || (b.Y == a.Y && b.X < a.X) {
-		a, b = b, a
-	}
-	return a, b
-}
-
-// applySelection overlays a highlight style on selected cells.
-func (t *TUI) applySelection(buf *ScreenBuffer) {
-	start, end := t.selectionRange()
-	for y := start.Y; y <= end.Y && y < buf.Height; y++ {
-		if y < 0 {
-			continue
-		}
-		sx := 0
-		ex := buf.Width - 1
-		if y == start.Y {
-			sx = start.X
-		}
-		if y == end.Y {
-			ex = end.X
-		}
-		for x := sx; x <= ex && x < buf.Width; x++ {
-			if x < 0 {
-				continue
-			}
-			cell := &buf.Cells[y][x]
-			cell.Style.BG = NewColor(60, 60, 100)
-			if !cell.Style.FG.Set {
-				cell.Style.FG = NewColor(220, 220, 220)
-			}
-		}
-	}
 }
 
 

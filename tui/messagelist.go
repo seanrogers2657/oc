@@ -33,6 +33,20 @@ func (ml *MessageList) Focused() bool     { return false }
 func (ml *MessageList) SetFocused(f bool) {}
 func (ml *MessageList) MinSize() (int, int) { return 20, 3 }
 
+// ScrollUp scrolls the message list up by n lines.
+func (ml *MessageList) ScrollUp(n int) {
+	ml.scroll.ScrollUp(n)
+	ml.autoScroll = false
+}
+
+// ScrollDown scrolls the message list down by n lines.
+func (ml *MessageList) ScrollDown(n int) {
+	ml.scroll.ScrollDown(n)
+	if ml.scroll.AtBottom() {
+		ml.autoScroll = true
+	}
+}
+
 // Update handles events. Returns true if redraw needed.
 func (ml *MessageList) Update(ev Event) bool {
 	switch e := ev.(type) {
@@ -50,18 +64,6 @@ func (ml *MessageList) Update(ev Event) bool {
 			}
 			return true
 		}
-
-	case ScrollEvent:
-		if e.Up {
-			ml.scroll.ScrollUp(3)
-			ml.autoScroll = false
-		} else {
-			ml.scroll.ScrollDown(3)
-			if ml.scroll.AtBottom() {
-				ml.autoScroll = true
-			}
-		}
-		return true
 
 	case CustomEvent:
 		switch e.Topic {

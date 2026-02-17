@@ -29,12 +29,6 @@ const (
 	BracketedPasteDisable = "\x1b[?2004l"
 )
 
-// Mouse tracking (button-event mode + SGR extended coordinates)
-const (
-	MouseEnable  = "\x1b[?1002h\x1b[?1006h" // button-event tracking (includes drag) + SGR mode
-	MouseDisable = "\x1b[?1006l\x1b[?1002l"
-)
-
 
 // Reset all attributes
 const ResetStyle = "\x1b[0m"
