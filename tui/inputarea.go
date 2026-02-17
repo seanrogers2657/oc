@@ -22,6 +22,10 @@ type InputArea struct {
 	prompt    string
 	hintText  string
 	scrollOff int // vertical scroll offset within the input area
+
+	// Prompt mode (tool asking user a question)
+	promptMode     bool
+	promptQuestion string
 }
 
 // NewInputArea creates a new input area.
@@ -46,9 +50,13 @@ func (ia *InputArea) Text() string {
 	return b.String()
 }
 
-// LineCount returns the number of lines of text.
+// LineCount returns the number of lines of text (including the question line in prompt mode).
 func (ia *InputArea) LineCount() int {
-	return len(ia.lines)
+	n := len(ia.lines)
+	if ia.promptMode && ia.promptQuestion != "" {
+		n++
+	}
+	return n
 }
 
 // Clear resets the input area.
@@ -226,8 +234,17 @@ func (ia *InputArea) Render(buf *ScreenBuffer, bounds Rect) {
 		buf.Set(x, bounds.Y, '─', borderStyle)
 	}
 
-	// Available lines for text (minus border and hint)
-	textAreaH := bounds.Height - 2 // border + hint
+	// In prompt mode, show the question on the line after the border
+	questionLines := 0
+	if ia.promptMode && ia.promptQuestion != "" {
+		questionStyle := Style{FG: NewColor(255, 200, 60), Bold: true}
+		qy := bounds.Y + 1
+		buf.WriteString(bounds.X+1, qy, ia.promptQuestion, questionStyle)
+		questionLines = 1
+	}
+
+	// Available lines for text (minus border, question, and hint)
+	textAreaH := bounds.Height - 2 - questionLines // border + hint + question
 	if textAreaH < 1 {
 		textAreaH = 1
 	}
@@ -245,7 +262,7 @@ func (ia *InputArea) Render(buf *ScreenBuffer, bounds Rect) {
 	// Draw text lines
 	for i := 0; i < textAreaH && i+ia.scrollOff < len(ia.lines); i++ {
 		lineIdx := i + ia.scrollOff
-		y := bounds.Y + 1 + i
+		y := bounds.Y + 1 + questionLines + i
 		x := bounds.X
 
 		// Draw prompt on first visible line
@@ -283,6 +300,20 @@ func (ia *InputArea) Render(buf *ScreenBuffer, bounds Rect) {
 	// Draw hint line at bottom
 	hintY := bounds.Y + bounds.Height - 1
 	buf.WriteString(bounds.X+1, hintY, ia.hintText, hintStyle)
+}
+
+// SetPromptMode switches the input area into or out of prompt mode.
+func (ia *InputArea) SetPromptMode(on bool, question string) {
+	ia.promptMode = on
+	ia.promptQuestion = question
+	ia.Clear()
+	if on {
+		ia.prompt = "? "
+		ia.hintText = "Enter=answer"
+	} else {
+		ia.prompt = "> "
+		ia.hintText = "Enter=send  Alt+Enter=newline  Ctrl+C=exit"
+	}
 }
 
 // --- Editing operations ---

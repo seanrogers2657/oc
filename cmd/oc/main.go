@@ -103,6 +103,7 @@ func run(c *cli.Context) error {
 		tools.Register(tool.NewEdit())
 		tools.Register(tool.NewGlob())
 		tools.Register(tool.NewGrep())
+		tools.Register(tool.NewAsk())
 	}
 
 	// Build model config

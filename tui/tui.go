@@ -43,6 +43,9 @@ type TUI struct {
 	selAnchor pos  // where the press started
 	selCursor pos  // current drag position
 	hasSelect bool // true if there's a visible selection
+
+	// Prompt mode state (for tool asking user a question)
+	promptResponse chan<- string // non-nil while awaiting a prompt answer
 }
 
 // pos is a screen coordinate.
@@ -200,7 +203,38 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 			t.render()
 		}
 
-	case CustomEvent, TickEvent:
+	case CustomEvent:
+		// Handle prompt events
+		if ce, ok := ev.(CustomEvent); ok && ce.Topic == event.TopicToolPrompt {
+			if req, ok := ce.Data.(event.PromptRequest); ok {
+				t.promptResponse = req.Response
+				t.inputArea.SetPromptMode(true, req.Question)
+				t.inputArea.onSubmit = func(text string) {
+					if t.promptResponse != nil {
+						t.promptResponse <- text
+						t.promptResponse = nil
+					}
+					t.inputArea.SetPromptMode(false, "")
+					t.inputArea.onSubmit = func(text string) {
+						if t.deps.OnInput != nil {
+							t.deps.OnInput(text)
+						}
+					}
+					t.computeLayout()
+				}
+				t.computeLayout()
+				t.render()
+				break
+			}
+		}
+		dirty := t.statusBar.Update(ev)
+		dirty = t.messageList.Update(ev) || dirty
+		dirty = t.inputArea.Update(ev) || dirty
+		if dirty {
+			t.render()
+		}
+
+	case TickEvent:
 		dirty := t.statusBar.Update(ev)
 		dirty = t.messageList.Update(ev) || dirty
 		dirty = t.inputArea.Update(ev) || dirty
@@ -336,6 +370,7 @@ func (t *TUI) subscribeBusEvents() {
 		event.TopicMsgDone,
 		event.TopicError,
 		event.TopicStatus,
+		event.TopicToolPrompt,
 	}
 	for _, topic := range topics {
 		topic := topic

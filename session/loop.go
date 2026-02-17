@@ -282,10 +282,12 @@ func (s *Session) executeToolCalls(ctx context.Context, assistantMsg *Message) e
 			continue
 		}
 
+		prompter := &eventPrompter{events: s.deps.Events}
 		result := t.Execute(tool.Context{
 			SessionID:  s.ID,
 			WorkingDir: s.WorkingDir,
 			Ctx:        ctx,
+			Prompter:   prompter,
 		}, tc.Args)
 
 		tc.End = time.Now()
@@ -399,6 +401,28 @@ func extractText(parts []Part) string {
 		}
 	}
 	return text
+}
+
+// eventPrompter implements tool.Prompter by publishing a prompt event and
+// blocking until the TUI sends the user's answer back on a channel.
+type eventPrompter struct {
+	events EventSink
+}
+
+func (p *eventPrompter) Prompt(ctx context.Context, question string) (string, error) {
+	ch := make(chan string, 1)
+	p.events.Publish(event.TopicToolPrompt, event.PromptRequest{
+		Question: question,
+		Response: ch,
+	})
+	p.events.Publish(event.TopicStatus, "awaiting input")
+
+	select {
+	case answer := <-ch:
+		return answer, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // extractToolCalls pulls ToolCallParts out as provider.ToolCall values.

@@ -792,3 +792,92 @@ func TestLoopWithMultipleToolCalls(t *testing.T) {
 		t.Errorf("expected final text 'All done.', got %q", finalText)
 	}
 }
+
+// promptTool is a mock tool that uses the Prompter to ask a question.
+type promptTool struct{}
+
+func (p *promptTool) Name() string               { return "user_prompt" }
+func (p *promptTool) Description() string         { return "ask user" }
+func (p *promptTool) Parameters() map[string]any  { return map[string]any{"type": "object"} }
+func (p *promptTool) Execute(ctx tool.Context, argsJSON string) tool.Result {
+	if ctx.Prompter == nil {
+		return tool.Result{Error: fmt.Errorf("no prompter")}
+	}
+	answer, err := ctx.Prompter.Prompt(ctx.Ctx, "what language?")
+	if err != nil {
+		return tool.Result{Error: err}
+	}
+	return tool.Result{Output: answer, Title: "Asked user"}
+}
+
+func TestLoopWithPromptTool(t *testing.T) {
+	callCount := 0
+	mp := &mockProvider{
+		streamFn: func(msgs []provider.Message, _ []provider.ToolDef) <-chan provider.StreamEvent {
+			ch := make(chan provider.StreamEvent, 10)
+			go func() {
+				callCount++
+				if callCount == 1 {
+					ch <- provider.StreamEvent{Type: provider.EventToolCallStart, ToolCall: &provider.ToolCall{ID: "call_p", Name: "user_prompt"}}
+					ch <- provider.StreamEvent{Type: provider.EventToolCallDelta, ToolCall: &provider.ToolCall{ID: "call_p", Args: `{"question":"what language?"}`}}
+					ch <- provider.StreamEvent{Type: provider.EventToolCallEnd, ToolCall: &provider.ToolCall{ID: "call_p", Name: "user_prompt", Args: `{"question":"what language?"}`}}
+					ch <- provider.StreamEvent{Type: provider.EventDone, FinishReason: "tool_calls"}
+				} else {
+					ch <- provider.StreamEvent{Type: provider.EventText, Text: "Hello Go!"}
+					ch <- provider.StreamEvent{Type: provider.EventDone, FinishReason: "stop"}
+				}
+				close(ch)
+			}()
+			return ch
+		},
+	}
+
+	te := &mockToolExecutor{
+		tools: map[string]tool.Tool{
+			"user_prompt": &promptTool{},
+		},
+	}
+
+	s, bus := newTestSession(mp, te)
+
+	// Subscribe to TopicToolPrompt and answer immediately
+	bus.Subscribe(event.TopicToolPrompt, func(p event.Payload) {
+		req := p.Data.(event.PromptRequest)
+		if req.Question != "what language?" {
+			t.Errorf("expected question %q, got %q", "what language?", req.Question)
+		}
+		req.Response <- "Go"
+	})
+
+	s.Send(context.Background(), "ask me something")
+
+	if !waitForIdle(s, 2*time.Second) {
+		t.Fatal("session did not return to idle")
+	}
+
+	msgs := s.GetMessages()
+	// user, assistant(tool call), tool result, assistant(final)
+	if len(msgs) < 4 {
+		t.Fatalf("expected at least 4 messages, got %d", len(msgs))
+	}
+
+	// The tool result should contain the user's answer
+	for _, msg := range msgs {
+		if msg.Role == provider.RoleTool {
+			for _, part := range msg.Parts {
+				if tc, ok := part.(ToolCallPart); ok && tc.Tool == "user_prompt" {
+					if tc.Output != "Go" {
+						t.Errorf("expected tool output %q, got %q", "Go", tc.Output)
+					}
+				}
+			}
+		}
+	}
+
+	// Final assistant message should reference the answer
+	lastMsg := msgs[len(msgs)-1]
+	text := extractText(lastMsg.Parts)
+	if text != "Hello Go!" {
+		t.Errorf("expected 'Hello Go!', got %q", text)
+	}
+}

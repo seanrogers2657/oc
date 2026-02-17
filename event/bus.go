@@ -11,9 +11,17 @@ const (
 	TopicToolStart Topic = "tool.start"
 	TopicToolDone  Topic = "tool.done"
 	TopicMsgDone   Topic = "message.done"
-	TopicError     Topic = "error"
-	TopicStatus    Topic = "status"
+	TopicError      Topic = "error"
+	TopicStatus     Topic = "status"
+	TopicToolPrompt Topic = "tool.prompt"
 )
+
+// PromptRequest is the payload for TopicToolPrompt events.
+// The TUI displays the question and sends the user's answer on Response.
+type PromptRequest struct {
+	Question string
+	Response chan<- string
+}
 
 // Payload wraps a topic + arbitrary data for delivery to subscribers.
 type Payload struct {
