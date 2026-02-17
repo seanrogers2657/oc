@@ -77,6 +77,26 @@ func (s *Session) GetContextTokens() int {
 	return s.contextTokens
 }
 
+// AddLocalMessage appends a display-only message that is not sent to the model.
+func (s *Session) AddLocalMessage(text string) {
+	msg := Message{
+		ID:        fmt.Sprintf("msg_%d", time.Now().UnixNano()),
+		SessionID: s.ID,
+		Role:      provider.RoleAssistant,
+		Parts:     []Part{TextPart{Text: text}},
+		CreatedAt: time.Now(),
+		Local:     true,
+	}
+	s.addMessage(msg)
+}
+
+// ClearMessages removes all messages from the conversation history.
+func (s *Session) ClearMessages() {
+	s.mu.Lock()
+	s.messages = nil
+	s.mu.Unlock()
+}
+
 // addMessage appends a message and returns it.
 func (s *Session) addMessage(msg Message) {
 	s.mu.Lock()

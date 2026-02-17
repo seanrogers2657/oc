@@ -362,6 +362,9 @@ func (s *Session) buildProviderMessages() []provider.Message {
 
 	var result []provider.Message
 	for _, msg := range msgs {
+		if msg.Local {
+			continue
+		}
 		switch msg.Role {
 		case provider.RoleUser:
 			text := extractText(msg.Parts)

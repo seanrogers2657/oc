@@ -61,4 +61,5 @@ type Message struct {
 	Tokens    provider.Usage
 	CreatedAt time.Time
 	Error     error
+	Local     bool // display-only, not sent to the model
 }

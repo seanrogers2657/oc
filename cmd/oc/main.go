@@ -178,6 +178,9 @@ func run(c *cli.Context) error {
 		Events: bus,
 	}, modelCfg, workingDir)
 
+	// Create command registry
+	commands := tui.NewCommandRegistry()
+
 	// Create TUI
 	ui := tui.New(tui.Deps{
 		Source: bus,
@@ -204,10 +207,62 @@ func run(c *cli.Context) error {
 		Messages: func() []session.Message {
 			return sess.GetMessages()
 		},
+		Commands: commands,
 	})
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+
+	// Register commands (after ui is created so closures can reference it)
+	commands.Register(tui.Command{
+		Name:        "clear",
+		Description: "Clear conversation history",
+		Aliases:     []string{"cls", "reset"},
+		Action: func() {
+			sess.ClearMessages()
+			bus.Publish(event.TopicStatus, "idle")
+		},
+	})
+	commands.Register(tui.Command{
+		Name:        "cancel",
+		Description: "Cancel current operation",
+		Aliases:     []string{"stop", "interrupt"},
+		Action: func() {
+			sess.Cancel()
+		},
+	})
+	commands.Register(tui.Command{
+		Name:        "exit",
+		Description: "Exit the application",
+		Aliases:     []string{"quit", "q"},
+		Action: func() {
+			cancel()
+		},
+	})
+	commands.Register(tui.Command{
+		Name:        "help",
+		Description: "Show available commands",
+		Aliases:     []string{"?", "commands"},
+		Action: func() {
+			helpText := "Available commands:\n"
+			for _, cmd := range commands.All() {
+				helpText += "  :" + cmd.Name
+				if len(cmd.Aliases) > 0 {
+					helpText += " ("
+					for i, a := range cmd.Aliases {
+						if i > 0 {
+							helpText += ", "
+						}
+						helpText += a
+					}
+					helpText += ")"
+				}
+				helpText += " - " + cmd.Description + "\n"
+			}
+			sess.AddLocalMessage(helpText)
+			bus.Publish(event.TopicMsgDone, "help")
+		},
+	})
 
 	return ui.Run(ctx)
 }

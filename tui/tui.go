@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ type Deps struct {
 	OnInput  InputHandler        // called when user submits text
 	Status   StatusProvider      // returns current status info
 	Messages MessageListProvider // returns current messages
+	Commands *CommandRegistry    // registered commands for command palette
 }
 
 // TUI is the top-level terminal application.
@@ -35,6 +37,7 @@ type TUI struct {
 	statusBar   *StatusBar
 	messageList *MessageList
 	inputArea   *InputArea
+	cmdPalette  *CommandPalette
 
 	layout Layout
 
@@ -44,7 +47,7 @@ type TUI struct {
 
 // New creates a new TUI with the given dependencies.
 func New(deps Deps) *TUI {
-	return &TUI{
+	t := &TUI{
 		events: make(chan Event, 64),
 		deps:   deps,
 
@@ -52,6 +55,10 @@ func New(deps Deps) *TUI {
 		messageList: NewMessageList(deps.Messages),
 		inputArea:   NewInputArea(),
 	}
+	if deps.Commands != nil {
+		t.cmdPalette = NewCommandPalette(deps.Commands)
+	}
+	return t
 }
 
 // Run starts the TUI event loop. Blocks until ctx is cancelled or Ctrl+C.
@@ -138,6 +145,26 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 		if e.Ctrl && e.Rune == 'c' {
 			cancel()
 			return true
+		}
+
+		// Command palette intercept - when active, it gets ALL keys
+		if t.cmdPalette != nil && t.cmdPalette.Active() {
+			dirty, consumed := t.cmdPalette.Update(e)
+			if consumed {
+				if dirty {
+					t.render()
+				}
+				return false
+			}
+		}
+
+		// Trigger command palette: ':' when input is empty and not in prompt mode
+		if t.cmdPalette != nil && e.Key == KeyRune && e.Rune == ':' && !t.inputArea.promptMode {
+			if strings.TrimSpace(t.inputArea.Text()) == "" {
+				t.cmdPalette.Open()
+				t.render()
+				return false
+			}
 		}
 
 		// Scroll message list with Ctrl+K (up) / Ctrl+J (down)
@@ -228,6 +255,10 @@ func (t *TUI) render() {
 	t.messageList.Render(t.next, t.layout.MessageList)
 	t.inputArea.Render(t.next, t.layout.InputArea)
 
+	if t.cmdPalette != nil && t.cmdPalette.Active() {
+		t.cmdPalette.Render(t.next, t.width, t.height)
+	}
+
 	// Compute diff and write to stdout
 	diff := t.next.Diff(t.current)
 	if diff != "" {
@@ -246,6 +277,10 @@ func (t *TUI) fullRender() {
 	t.statusBar.Render(t.next, t.layout.StatusBar)
 	t.messageList.Render(t.next, t.layout.MessageList)
 	t.inputArea.Render(t.next, t.layout.InputArea)
+
+	if t.cmdPalette != nil && t.cmdPalette.Active() {
+		t.cmdPalette.Render(t.next, t.width, t.height)
+	}
 
 	io.WriteString(os.Stdout, t.next.FullRender())
 
