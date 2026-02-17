@@ -159,6 +159,137 @@ func TestMdLineToRenderedWrapsCorrectly(t *testing.T) {
 	}
 }
 
+func TestFindBreakPoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		maxRunes int
+		want     string
+	}{
+		{"text fits", "hello", 10, "hello"},
+		{"space break", "hello world", 8, "hello"},
+		{"hyphen break", "well-done", 8, "well-"},
+		{"no break point", "abcdefghij", 5, ""},
+		{"break at exact limit", "hello world", 5, "hello"},
+		{"prefer last space", "one two three", 10, "one two"},
+		{"hyphen mid-word", "self-contained stuff", 15, "self-contained"},
+		{"single char", "a", 1, "a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findBreakPoint(tt.text, tt.maxRunes)
+			if got != tt.want {
+				t.Errorf("findBreakPoint(%q, %d) = %q, want %q", tt.text, tt.maxRunes, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMdLineToRenderedWordWrap(t *testing.T) {
+	// "hello world foo" at width 12 should wrap to ["hello world", "foo"]
+	line := markdown.Line{
+		Spans: []markdown.Span{{Text: "hello world foo", Kind: markdown.KindNormal}},
+	}
+	result := mdLineToRendered(line, 12)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(result))
+	}
+	row0 := spanText(result[0])
+	row1 := spanText(result[1])
+	if row0 != "hello world" {
+		t.Errorf("row 0 = %q, want %q", row0, "hello world")
+	}
+	if row1 != "foo" {
+		t.Errorf("row 1 = %q, want %q", row1, "foo")
+	}
+}
+
+func TestMdLineToRenderedIndentPreservation(t *testing.T) {
+	// Line with indent 4, text wraps — continuation should have 4-space prefix
+	line := markdown.Line{
+		Indent: 4,
+		Spans:  []markdown.Span{{Text: "hello world foo bar", Kind: markdown.KindNormal}},
+	}
+	// Width 16: indent(4) + 12 content chars per line
+	// "hello world" = 11 runes, fits; "foo bar" = 7, doesn't fit with "hello world " on same line
+	result := mdLineToRendered(line, 16)
+	if len(result) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(result))
+	}
+	// Check continuation line starts with 4 spaces
+	row1 := spanText(result[1])
+	if !strings.HasPrefix(row1, "    ") {
+		t.Errorf("continuation line should start with 4 spaces, got %q", row1)
+	}
+}
+
+func TestMdLineToRenderedStyledSpanWrap(t *testing.T) {
+	// Bold span crossing line boundary keeps bold style on both lines
+	line := markdown.Line{
+		Spans: []markdown.Span{{Text: "hello world foo", Kind: markdown.KindBold}},
+	}
+	result := mdLineToRendered(line, 12)
+	if len(result) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(result))
+	}
+	boldStyle := mdStyle(markdown.KindBold)
+	// Check both lines have the bold style
+	for i, rl := range result {
+		for _, s := range rl.spans {
+			if s.text != "" && s.style != boldStyle {
+				t.Errorf("line %d span %q: expected bold style, got %+v", i, s.text, s.style)
+			}
+		}
+	}
+}
+
+func TestMdLineToRenderedLongWordForcedBreak(t *testing.T) {
+	// Word longer than maxWidth falls back to character break
+	line := markdown.Line{
+		Spans: []markdown.Span{{Text: "abcdefghijklmnop", Kind: markdown.KindNormal}},
+	}
+	result := mdLineToRendered(line, 8)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(result))
+	}
+	row0 := spanText(result[0])
+	row1 := spanText(result[1])
+	if row0 != "abcdefgh" {
+		t.Errorf("row 0 = %q, want %q", row0, "abcdefgh")
+	}
+	if row1 != "ijklmnop" {
+		t.Errorf("row 1 = %q, want %q", row1, "ijklmnop")
+	}
+}
+
+func TestMdLineToRenderedHyphenBreak(t *testing.T) {
+	// "well-documented code" at width 16 should break after hyphen
+	line := markdown.Line{
+		Spans: []markdown.Span{{Text: "well-documented code", Kind: markdown.KindNormal}},
+	}
+	result := mdLineToRendered(line, 16)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(result))
+	}
+	row0 := spanText(result[0])
+	row1 := spanText(result[1])
+	if row0 != "well-documented" {
+		t.Errorf("row 0 = %q, want %q", row0, "well-documented")
+	}
+	if row1 != "code" {
+		t.Errorf("row 1 = %q, want %q", row1, "code")
+	}
+}
+
+// spanText concatenates all span text in a renderedLine.
+func spanText(rl renderedLine) string {
+	var sb strings.Builder
+	for _, s := range rl.spans {
+		sb.WriteString(s.text)
+	}
+	return sb.String()
+}
+
 func TestExpandTabs(t *testing.T) {
 	tests := []struct {
 		input    string

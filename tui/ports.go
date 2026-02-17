@@ -16,6 +16,7 @@ type EventSource interface {
 type StatusInfo struct {
 	Model         string // model ID (e.g. "gpt-4o")
 	Provider      string // provider name (e.g. "openai")
+	Detail        string // optional extra context (e.g. "max", "local")
 	Status        string // "idle", "busy"
 	Tokens        int    // total tokens used
 	ContextTokens int    // input tokens from the most recent request

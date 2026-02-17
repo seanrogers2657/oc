@@ -11,14 +11,22 @@ import (
 
 // AnthropicProvider implements Provider for the Anthropic Messages API.
 type AnthropicProvider struct {
-	apiKey string
+	auth   Authenticator
 	client *http.Client
 }
 
-// NewAnthropic creates a new Anthropic provider.
+// NewAnthropic creates a new Anthropic provider with API key authentication.
 func NewAnthropic(apiKey string) *AnthropicProvider {
 	return &AnthropicProvider{
-		apiKey: apiKey,
+		auth:   &APIKeyAuth{Key: apiKey},
+		client: &http.Client{},
+	}
+}
+
+// NewAnthropicWithAuth creates a new Anthropic provider with a custom authenticator.
+func NewAnthropicWithAuth(auth Authenticator) *AnthropicProvider {
+	return &AnthropicProvider{
+		auth:   auth,
 		client: &http.Client{},
 	}
 }
@@ -40,8 +48,11 @@ func (p *AnthropicProvider) Stream(ctx context.Context, cfg ModelConfig, message
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
+
+	if err := p.auth.Authenticate(req); err != nil {
+		return nil, fmt.Errorf("authenticate: %w", err)
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/srogers/oc/auth"
 	"github.com/srogers/oc/config"
 	"github.com/srogers/oc/event"
 	"github.com/srogers/oc/provider"
@@ -48,6 +49,34 @@ func main() {
 				EnvVars: []string{"OC_BASE_URL"},
 			},
 		},
+		Commands: []*cli.Command{
+			{
+				Name:  "login",
+				Usage: "Authenticate with Claude Max (OAuth)",
+				Action: func(c *cli.Context) error {
+					oauthCfg := auth.AnthropicOAuth()
+					store := auth.NewTokenStore()
+					token, err := auth.Login(c.Context, oauthCfg, store)
+					if err != nil {
+						return fmt.Errorf("login failed: %w", err)
+					}
+					fmt.Printf("Authenticated successfully (token expires %s)\n", token.ExpiresAt.Format(time.RFC3339))
+					return nil
+				},
+			},
+			{
+				Name:  "logout",
+				Usage: "Remove stored Claude Max credentials",
+				Action: func(c *cli.Context) error {
+					store := auth.NewTokenStore()
+					if err := store.Clear(); err != nil {
+						return fmt.Errorf("logout failed: %w", err)
+					}
+					fmt.Println("Logged out successfully.")
+					return nil
+				},
+			},
+		},
 		Action: run,
 	}
 
@@ -76,13 +105,30 @@ func run(c *cli.Context) error {
 
 	// Select provider adapter
 	var p provider.Provider
+	var providerDetail string
 	enableTools := true
 	switch cfg.Provider {
-	case "anthropic":
-		if cfg.APIKey == "" {
-			return fmt.Errorf("API key required for Anthropic (set ANTHROPIC_API_KEY or OC_API_KEY)")
+	case "anthropic", "claude-max":
+		if cfg.Provider == "anthropic" && cfg.APIKey != "" {
+			p = provider.NewAnthropic(cfg.APIKey)
+		} else {
+			// Try stored OAuth token (from 'oc login')
+			oauthCfg := auth.AnthropicOAuth()
+			store := auth.NewTokenStore()
+			token, err := store.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load auth token: %w", err)
+			}
+			if token != nil {
+				bearer := &auth.BearerAuth{Config: oauthCfg, Store: store, Token: token}
+				p = provider.NewAnthropicWithAuth(bearer)
+				providerDetail = "max"
+			} else if cfg.Provider == "claude-max" {
+				return fmt.Errorf("not authenticated — run 'oc login' first")
+			} else {
+				return fmt.Errorf("API key required for Anthropic (set ANTHROPIC_API_KEY or OC_API_KEY, or run 'oc login')")
+			}
 		}
-		p = provider.NewAnthropic(cfg.APIKey)
 	default:
 		// OpenAI-compatible (covers openai, ollama, lm studio, vllm, etc.)
 		if cfg.BaseURL == "" {
@@ -148,6 +194,7 @@ func run(c *cli.Context) error {
 			return tui.StatusInfo{
 				Model:         cfg.Model,
 				Provider:      p.Name(),
+				Detail:        providerDetail,
 				Status:        status,
 				Tokens:        tokens.TotalTokens,
 				ContextTokens: sess.GetContextTokens(),

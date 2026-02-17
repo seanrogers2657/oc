@@ -262,8 +262,10 @@ func streamWithURL(p *AnthropicProvider, url string, cfg ModelConfig, messages [
 	}
 	req.Body = io.NopCloser(bytesReader(reqBytes))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
+	if err := p.auth.Authenticate(req); err != nil {
+		return nil, err
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -302,3 +304,63 @@ func (r *bytesReaderImpl) Read(p []byte) (int, error) {
 }
 
 func (r *bytesReaderImpl) Close() error { return nil }
+
+// mockAuth is a test authenticator that records the header it sets.
+type mockAuth struct {
+	headerSet bool
+}
+
+func (m *mockAuth) Authenticate(req *http.Request) error {
+	req.Header.Set("Authorization", "Bearer test-oauth-token")
+	m.headerSet = true
+	return nil
+}
+
+func TestNewAnthropicWithAuth(t *testing.T) {
+	auth := &mockAuth{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer test-oauth-token" {
+			t.Errorf("Authorization = %q, want Bearer token", got)
+		}
+		// Should NOT have x-api-key
+		if got := r.Header.Get("x-api-key"); got != "" {
+			t.Errorf("x-api-key = %q, want empty", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `event: message_start
+data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`)
+	}))
+	defer srv.Close()
+
+	p := NewAnthropicWithAuth(auth)
+	ch, err := streamWithURL(p, srv.URL+"/v1/messages", ModelConfig{Model: "claude-sonnet-4-20250514"}, []Message{UserMessage("hi")}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events := collectStreamEvents(ch)
+	if !auth.headerSet {
+		t.Error("Authenticate was not called")
+	}
+
+	hasText := false
+	for _, ev := range events {
+		if ev.Type == EventText && ev.Text == "hi" {
+			hasText = true
+		}
+	}
+	if !hasText {
+		t.Error("expected text event")
+	}
+}

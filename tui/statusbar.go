@@ -77,10 +77,14 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 		x += buf.WriteString(x, bounds.Y, " ", bgStyle)
 	}
 
-	// Provider
+	// Provider (with optional detail)
 	if info.Provider != "" {
 		provStyle := Style{BG: NewColor(30, 30, 30), FG: NewColor(120, 120, 120)}
-		x += buf.WriteString(x, bounds.Y, "("+info.Provider+")", provStyle)
+		label := info.Provider
+		if info.Detail != "" {
+			label += "/" + info.Detail
+		}
+		x += buf.WriteString(x, bounds.Y, "("+label+")", provStyle)
 		x += buf.WriteString(x, bounds.Y, " ", bgStyle)
 	}
 

@@ -236,95 +236,99 @@ func (ml *MessageList) renderMessage(msg session.Message, maxWidth int) []render
 }
 
 // mdLineToRendered converts a markdown.Line to renderedLines, wrapping if needed.
+// Single-pass algorithm: walks spans left-to-right, building rows directly.
+// Wraps at word boundaries (spaces, hyphens) when possible, falls back to
+// character-level breaks for words longer than the available width.
+// Continuation lines preserve the line's Indent.
 func mdLineToRendered(line markdown.Line, maxWidth int) []renderedLine {
 	if len(line.Spans) == 0 {
 		return []renderedLine{{}}
 	}
 
-	// Simple case: build spans for the line
-	var spans []styledSpan
-	cx := line.Indent
-	var currentRow []styledSpan
+	indent := line.Indent
+	if indent >= maxWidth {
+		indent = maxWidth - 1
+	}
+	if indent < 0 {
+		indent = 0
+	}
 
-	// Add indent
-	if line.Indent > 0 {
-		indent := ""
-		for i := 0; i < line.Indent && i < maxWidth; i++ {
-			indent += " "
+	makeIndentSpan := func() styledSpan {
+		return styledSpan{text: strings.Repeat(" ", indent), style: Style{}}
+	}
+
+	var result []renderedLine
+	var currentRow []styledSpan
+	cx := 0 // cursor position in current row (runes)
+
+	// Add indent for first line
+	if indent > 0 {
+		currentRow = append(currentRow, makeIndentSpan())
+		cx = indent
+	}
+
+	flushRow := func() {
+		result = append(result, renderedLine{spans: currentRow})
+		currentRow = nil
+		cx = 0
+		// Add indent for continuation line
+		if indent > 0 {
+			currentRow = append(currentRow, makeIndentSpan())
+			cx = indent
 		}
-		currentRow = append(currentRow, styledSpan{text: indent, style: Style{}})
 	}
 
 	for _, span := range line.Spans {
 		style := mdStyle(span.Kind)
 
-		// For HRule, produce a full-width line
+		// HRule: produce a full-width line
 		if span.Kind == markdown.KindHRule {
-			hrText := ""
-			for i := 0; i < maxWidth; i++ {
-				hrText += "─"
-			}
+			hrText := strings.Repeat("─", maxWidth)
 			return []renderedLine{{spans: []styledSpan{{text: hrText, style: style}}}}
 		}
 
 		remaining := span.Text
-		remainLen := utf8.RuneCountInString(remaining)
-		for remainLen > 0 {
+		for len(remaining) > 0 {
+			remainLen := utf8.RuneCountInString(remaining)
 			avail := maxWidth - cx
-			if avail <= 0 {
-				// Wrap: emit current row and start new one
-				spans = append(spans, currentRow...)
-				currentRow = nil
-				cx = line.Indent
-				avail = maxWidth - cx
-			}
 
+			// Text fits on current line
 			if remainLen <= avail {
 				currentRow = append(currentRow, styledSpan{text: remaining, style: style})
 				cx += remainLen
 				remaining = ""
-				remainLen = 0
-			} else {
-				chunk := truncateRunes(remaining, avail)
+				break
+			}
+
+			// Text doesn't fit — try word-boundary break
+			chunk := findBreakPoint(remaining, avail)
+			if chunk != "" {
 				currentRow = append(currentRow, styledSpan{text: chunk, style: style})
 				remaining = remaining[len(chunk):]
-				remainLen -= avail
-				// Emit this row
-				spans = append(spans, currentRow...)
-				currentRow = nil
-				cx = line.Indent
+				// Trim leading spaces from remainder after a space break
+				remaining = strings.TrimLeft(remaining, " ")
+				flushRow()
+				continue
 			}
+
+			// No word break found
+			if cx > indent {
+				// Mid-line: flush current row and retry with full line width
+				flushRow()
+				continue
+			}
+
+			// At start of line: force character break
+			chunk = truncateRunes(remaining, avail)
+			currentRow = append(currentRow, styledSpan{text: chunk, style: style})
+			remaining = remaining[len(chunk):]
+			flushRow()
 		}
 	}
 
-	// Flush remaining
+	// Flush final row
 	if len(currentRow) > 0 {
-		spans = append(spans, currentRow...)
-	}
-
-	// For now, treat it as a single line (wrapping handled above by splitting into multiple calls)
-	// TODO: improve multi-line wrapping
-	if len(spans) == 0 {
-		return []renderedLine{{}}
-	}
-
-	// Split spans back into rows based on maxWidth
-	var result []renderedLine
-	var rowSpans []styledSpan
-	rowWidth := 0
-
-	for _, s := range spans {
-		sLen := utf8.RuneCountInString(s.text)
-		if rowWidth+sLen > maxWidth && rowWidth > 0 {
-			result = append(result, renderedLine{spans: rowSpans})
-			rowSpans = nil
-			rowWidth = 0
-		}
-		rowSpans = append(rowSpans, s)
-		rowWidth += sLen
-	}
-	if len(rowSpans) > 0 {
-		result = append(result, renderedLine{spans: rowSpans})
+		result = append(result, renderedLine{spans: currentRow})
 	}
 
 	if len(result) == 0 {
@@ -479,6 +483,25 @@ func truncateRunes(s string, n int) string {
 		i++
 	}
 	return s
+}
+
+// findBreakPoint finds the best word-boundary break point in text at or before
+// maxRunes. Returns the prefix up to the break (space excluded, hyphen included).
+// Returns "" if no good break point exists.
+func findBreakPoint(text string, maxRunes int) string {
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	for i := maxRunes; i > 0; i-- {
+		if runes[i] == ' ' {
+			return string(runes[:i])
+		}
+		if runes[i] == '-' {
+			return string(runes[:i+1])
+		}
+	}
+	return ""
 }
 
 // itoa converts int to string without importing strconv.

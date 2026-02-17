@@ -27,8 +27,8 @@ func Load() Config {
 		MaxTokens:   getEnvInt("OC_MAX_TOKENS", 0),
 	}
 
-	// Fall back to provider-specific API key env vars
-	if c.APIKey == "" {
+	// Fall back to provider-specific API key env vars (claude-max uses OAuth, not API keys)
+	if c.APIKey == "" && c.Provider != "claude-max" {
 		switch c.Provider {
 		case "anthropic":
 			c.APIKey = getEnv("ANTHROPIC_API_KEY", "")
@@ -46,7 +46,7 @@ func Load() Config {
 	// Default models per provider
 	if c.Model == "" {
 		switch c.Provider {
-		case "anthropic":
+		case "anthropic", "claude-max":
 			c.Model = "claude-sonnet-4-20250514"
 		case "openai":
 			c.Model = "gpt-4o"

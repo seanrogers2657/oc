@@ -99,3 +99,21 @@ func TestLoadMaxTokens(t *testing.T) {
 		t.Errorf("expected max_tokens 4096, got %d", cfg.MaxTokens)
 	}
 }
+
+func TestLoadClaudeMaxDefaults(t *testing.T) {
+	for _, k := range []string{"OC_API_KEY", "OC_MODEL", "OC_BASE_URL",
+		"ANTHROPIC_API_KEY", "OPENAI_API_KEY"} {
+		os.Unsetenv(k)
+	}
+	os.Setenv("OC_PROVIDER", "claude-max")
+	defer os.Unsetenv("OC_PROVIDER")
+
+	cfg := Load()
+	if cfg.Model != "claude-sonnet-4-20250514" {
+		t.Errorf("expected claude-sonnet model, got %q", cfg.Model)
+	}
+	// claude-max should not try to load API keys
+	if cfg.APIKey != "" {
+		t.Errorf("expected empty API key for claude-max, got %q", cfg.APIKey)
+	}
+}
