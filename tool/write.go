@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/srogers/oc/tool/diff"
 )
 
 // WriteTool writes or creates files.
@@ -50,6 +52,12 @@ func (t *WriteTool) Execute(ctx Context, argsJSON string) Result {
 
 	path := resolvePath(ctx.WorkingDir, args.FilePath)
 
+	// Read existing content for diff (if file exists)
+	var oldContent string
+	if existingData, err := os.ReadFile(path); err == nil {
+		oldContent = string(existingData)
+	}
+
 	// Create parent directories
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -60,8 +68,24 @@ func (t *WriteTool) Execute(ctx Context, argsJSON string) Result {
 		return Result{Error: fmt.Errorf("write file: %w", err)}
 	}
 
-	return Result{
+	result := Result{
 		Output: fmt.Sprintf("Wrote %d bytes to %s", len(args.Content), path),
 		Title:  fmt.Sprintf("Write %s (%d bytes)", filepath.Base(path), len(args.Content)),
 	}
+
+	// Generate diff if we had existing content
+	if oldContent != "" || args.Content != "" {
+		diffResult := diff.GenerateDiff(oldContent, args.Content, 3)
+		diffResult.OldName = path
+		diffResult.NewName = path
+		result.Diff = &diffResult
+		
+		// Update title to include diff stats if there are changes
+		if diffResult.Added > 0 || diffResult.Removed > 0 {
+			result.Title = fmt.Sprintf("Write %s (+%d -%d)", 
+				filepath.Base(path), diffResult.Added, diffResult.Removed)
+		}
+	}
+
+	return result
 }

@@ -292,6 +292,7 @@ func (s *Session) executeToolCalls(ctx context.Context, assistantMsg *Message) e
 
 		tc.End = time.Now()
 		tc.Title = result.Title
+		tc.Diff = result.Diff  // Store diff information
 		if result.Error != nil {
 			tc.Status = ToolError
 			tc.Error = result.Error.Error()

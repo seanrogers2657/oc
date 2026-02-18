@@ -79,7 +79,8 @@ func TestWriteTitle(t *testing.T) {
 	if !strings.Contains(r.Title, "out.txt") {
 		t.Errorf("title should contain filename, got: %s", r.Title)
 	}
-	if !strings.Contains(r.Title, "4 bytes") {
-		t.Errorf("title should contain byte count, got: %s", r.Title)
+	// Title format changed to show diff stats or byte count
+	if !strings.Contains(r.Title, "4 bytes") && !strings.Contains(r.Title, "+") {
+		t.Errorf("title should contain byte count or diff stats, got: %s", r.Title)
 	}
 }

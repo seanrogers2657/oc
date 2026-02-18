@@ -8,6 +8,7 @@ import (
 	"github.com/srogers/oc/markdown"
 	"github.com/srogers/oc/provider"
 	"github.com/srogers/oc/session"
+	"github.com/srogers/oc/tool/diff"
 )
 
 // MessageListProvider gives the message list access to session state.
@@ -378,8 +379,28 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 	}
 	lines = append(lines, renderedLine{spans: headerSpans})
 
-	// Output (truncated)
-	if tc.Output != "" {
+	// Show diff if available (for file-modifying tools)
+	if tc.Diff != nil && (tc.Diff.Added > 0 || tc.Diff.Removed > 0) {
+		diffLines := diff.FormatDiffForTUI(tc.Diff, maxWidth-2)
+		const maxDiffLines = 15
+		for i, dl := range diffLines {
+			if i >= maxDiffLines {
+				remaining := len(diffLines) - maxDiffLines
+				lines = append(lines, renderedLine{spans: []styledSpan{
+					{text: "  ...", style: Style{FG: NewColor(100, 100, 100)}},
+					{text: " (" + itoa(remaining) + " more lines)", style: Style{FG: NewColor(100, 100, 100)}},
+				}})
+				break
+			}
+			
+			// Convert diff styling to TUI styling
+			style := diffLineToStyle(dl)
+			lines = append(lines, renderedLine{spans: []styledSpan{
+				{text: "  " + dl.Text, style: style},
+			}})
+		}
+	} else if tc.Output != "" {
+		// Fall back to showing regular output if no diff available
 		outputStyle := Style{FG: NewColor(160, 160, 160)}
 		outputLines := wrapText(tc.Output, maxWidth-2)
 		const maxOutputLines = 10
@@ -529,4 +550,34 @@ func itoa(n int) string {
 		digits[i], digits[j] = digits[j], digits[i]
 	}
 	return string(digits)
+}
+
+// diffLineToStyle converts a diff.StyledLine to a TUI Style
+func diffLineToStyle(dl diff.StyledLine) Style {
+	style := Style{}
+	
+	// Set foreground color
+	switch dl.Foreground {
+	case "white":
+		style.FG = NewColor(255, 255, 255)
+	case "bright_black":
+		style.FG = NewColor(120, 120, 120)
+	default:
+		style.FG = NewColor(160, 160, 160) // default gray
+	}
+	
+	// Set background color
+	switch dl.Background {
+	case "dark_green":
+		style.BG = NewColor(0, 80, 0)    // Dark green background
+	case "dark_red":
+		style.BG = NewColor(120, 0, 0)   // Dark red background
+	}
+	
+	// Set bold if needed
+	if dl.Bold {
+		style.Bold = true
+	}
+	
+	return style
 }

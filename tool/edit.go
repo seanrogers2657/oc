@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/srogers/oc/tool/diff"
 )
 
 // EditTool performs string replacement edits on files.
@@ -100,12 +102,21 @@ func (t *EditTool) Execute(ctx Context, argsJSON string) Result {
 	}
 	title += ")"
 
-	// Show a snippet around the edited region, like READ does
-	output := editSnippet(newContent, args.NewString)
+	// Generate diff to show the changes
+	diffResult := diff.GenerateDiff(content, newContent, 3)
+	diffResult.OldName = path
+	diffResult.NewName = path
+
+	// Update title with diff stats
+	if diffResult.Added > 0 || diffResult.Removed > 0 {
+		title = fmt.Sprintf("Edit %s (+%d -%d)", 
+			filepath.Base(path), diffResult.Added, diffResult.Removed)
+	}
 
 	return Result{
-		Output: output,
+		Output: fmt.Sprintf("Made %d replacement(s) in %s", count, path),
 		Title:  title,
+		Diff:   &diffResult,
 	}
 }
 

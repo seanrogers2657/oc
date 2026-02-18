@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/srogers/oc/provider"
+	"github.com/srogers/oc/tool/diff"
 )
 
 // ToolStatus tracks the lifecycle of a tool call.
@@ -46,6 +47,7 @@ type ToolCallPart struct {
 	Error  string
 	Start  time.Time
 	End    time.Time
+	Diff   *diff.DiffResult // optional diff for file changes
 }
 
 func (ToolCallPart) partType() string { return "tool_call" }

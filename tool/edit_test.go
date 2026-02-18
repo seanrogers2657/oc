@@ -25,11 +25,20 @@ func TestEditSingleReplacement(t *testing.T) {
 	if string(data) != "goodbye world\n" {
 		t.Errorf("expected 'goodbye world\\n', got %q", string(data))
 	}
-	if r.Title != "Edit e.txt (1 replacement)" {
+	if !strings.Contains(r.Title, "Edit e.txt") {
 		t.Errorf("unexpected title: %s", r.Title)
 	}
-	if !strings.Contains(r.Output, "goodbye world") {
-		t.Errorf("output should show edited content, got:\n%s", r.Output)
+	if !strings.Contains(r.Output, "1 replacement") {
+		t.Errorf("output should mention replacement count, got:\n%s", r.Output)
+	}
+	
+	// Check that diff information is present
+	if r.Diff == nil {
+		t.Error("expected diff information")
+	} else {
+		if r.Diff.Added != 1 || r.Diff.Removed != 1 {
+			t.Errorf("expected 1 added and 1 removed line, got +%d -%d", r.Diff.Added, r.Diff.Removed)
+		}
 	}
 }
 
@@ -50,12 +59,16 @@ func TestEditReplaceAll(t *testing.T) {
 	if string(data) != "ccc bbb ccc\n" {
 		t.Errorf("expected 'ccc bbb ccc\\n', got %q", string(data))
 	}
-	if r.Title != "Edit ra.txt (2 replacements)" {
+	if !strings.Contains(r.Title, "Edit ra.txt") {
 		t.Errorf("unexpected title: %s", r.Title)
 	}
-	// Both replacements are on the same line, output should show both
-	if !strings.Contains(r.Output, "ccc bbb ccc") {
-		t.Errorf("output should show both replacements, got:\n%s", r.Output)
+	if !strings.Contains(r.Output, "2 replacement") {
+		t.Errorf("output should mention replacement count, got:\n%s", r.Output)
+	}
+	
+	// Check that diff information is present
+	if r.Diff == nil {
+		t.Error("expected diff information")
 	}
 }
 
@@ -118,8 +131,8 @@ func TestEditMultilineReplacement(t *testing.T) {
 	if string(data) != "replaced\nline3\n" {
 		t.Errorf("expected 'replaced\\nline3\\n', got %q", string(data))
 	}
-	if !strings.Contains(r.Output, "replaced") {
-		t.Errorf("output should show replaced text, got:\n%s", r.Output)
+	if !strings.Contains(r.Output, "replacement") {
+		t.Errorf("output should mention replacement, got:\n%s", r.Output)
 	}
 }
 

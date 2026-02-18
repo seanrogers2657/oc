@@ -1,12 +1,17 @@
 package tool
 
-import "context"
+import (
+	"context"
+
+	"github.com/srogers/oc/tool/diff"
+)
 
 // Result is what a tool returns after execution.
 type Result struct {
-	Output string // text output shown to the model
-	Title  string // short summary for TUI display
-	Error  error  // nil on success
+	Output string           // text output shown to the model
+	Title  string           // short summary for TUI display
+	Error  error            // nil on success
+	Diff   *diff.DiffResult // optional diff for file changes
 }
 
 // Prompter allows a tool to ask the user a question and wait for a response.

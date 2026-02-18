@@ -1,4 +1,4 @@
-* [feature] tools that make changes should show lines removed and lines added like git with background colors
+* [bug] user prompting doesn't show all the text to the user
 * [feature] multiple actions running in background?
 * [feature] expanded view for tools so user can see more detail, ctrl-o for more details?
 * [feature] expand cli tool with ability to pass in prompt
