@@ -34,7 +34,7 @@ func NewInputArea() *InputArea {
 		lines:      [][]rune{{}},
 		historyIdx: -1,
 		prompt:     "> ",
-		hintText:   "Enter=send  Alt+Enter=newline  Ctrl+C=exit",
+		hintText:   "Enter=send  Alt+Enter=newline  :=commands  C-j/k=scroll  C-c=exit",
 	}
 }
 
@@ -74,7 +74,7 @@ func (ia *InputArea) Focused() bool { return ia.focused }
 func (ia *InputArea) SetFocused(f bool) { ia.focused = f }
 
 // MinSize returns the minimum size.
-func (ia *InputArea) MinSize() (int, int) { return 10, 3 }
+func (ia *InputArea) MinSize() (int, int) { return 10, 4 }
 
 // Update handles keyboard events.
 func (ia *InputArea) Update(ev Event) bool {
@@ -240,8 +240,8 @@ func (ia *InputArea) Render(buf *ScreenBuffer, bounds Rect) {
 		questionLines = 1
 	}
 
-	// Available lines for text (minus border, question, and hint)
-	textAreaH := bounds.Height - 2 - questionLines // border + hint + question
+	// Available lines for text (minus top border, question, bottom border, and hint)
+	textAreaH := bounds.Height - 3 - questionLines // top border + bottom border + hint + question
 	if textAreaH < 1 {
 		textAreaH = 1
 	}
@@ -294,6 +294,12 @@ func (ia *InputArea) Render(buf *ScreenBuffer, bounds Rect) {
 		}
 	}
 
+	// Draw separator above hint
+	sepY := bounds.Y + bounds.Height - 2
+	for x := bounds.X; x < bounds.X+bounds.Width; x++ {
+		buf.Set(x, sepY, '─', borderStyle)
+	}
+
 	// Draw hint line at bottom
 	hintY := bounds.Y + bounds.Height - 1
 	buf.WriteString(bounds.X+1, hintY, ia.hintText, hintStyle)
@@ -309,7 +315,7 @@ func (ia *InputArea) SetPromptMode(on bool, question string) {
 		ia.hintText = "Enter=answer"
 	} else {
 		ia.prompt = "> "
-		ia.hintText = "Enter=send  Alt+Enter=newline  Ctrl+C=exit"
+		ia.hintText = "Enter=send  Alt+Enter=newline  :=commands  C-j/k=scroll  C-c=exit"
 	}
 }
 

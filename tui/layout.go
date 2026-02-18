@@ -22,15 +22,15 @@ func ComputeLayout(width, height, inputLines int) Layout {
 
 	statusBarH := 1
 
-	// Input area: content lines + 2 (border/prompt + hint line),
-	// minimum 3 rows, maximum 1/3 of screen
-	inputAreaH := inputLines + 2
-	if inputAreaH < 3 {
-		inputAreaH = 3
+	// Input area: content lines + 3 (top border + bottom border + hint line),
+	// minimum 4 rows, maximum 1/3 of screen
+	inputAreaH := inputLines + 3
+	if inputAreaH < 4 {
+		inputAreaH = 4
 	}
 	maxInputH := height / 3
-	if maxInputH < 3 {
-		maxInputH = 3
+	if maxInputH < 4 {
+		maxInputH = 4
 	}
 	if inputAreaH > maxInputH {
 		inputAreaH = maxInputH

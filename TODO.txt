@@ -1,9 +1,8 @@
+* [feature] tools that make changes should show lines removed and lines added like git with background colors
 * [feature] multiple actions running in background?
 * [feature] expanded view for tools so user can see more detail, ctrl-o for more details?
-* [feature] search tool, combined with Read (only part of file or file line range)
 * [feature] expand cli tool with ability to pass in prompt
 * [feature] sandbox environment. Using simple allow list semantics and project based files (.oc/sandbox.json), lets setup the ability to limit the power of oc so it doesn't cause damage.
-* [feature] EDIT should show lines removed and lines added like git with background colors
 * [feature] compact conversation, recent messages more relevant that older messages and show the current context fill percentage in status line
 * [feature] project based settings, basically a .oc/ folder with all project based configurations that we should adhere to.
 * [feature] add the ability to simulate rate limits in the oc tool. possibly declared in project configuration.

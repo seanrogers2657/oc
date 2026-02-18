@@ -41,6 +41,23 @@ func (t *GrepTool) Parameters() map[string]any {
 				"type":        "integer",
 				"description": "Number of context lines before and after each match (default 0)",
 			},
+			"case_insensitive": map[string]any{
+				"type":        "boolean",
+				"description": "Case-insensitive search (default false)",
+			},
+			"output_mode": map[string]any{
+				"type":        "string",
+				"description": "Output format: \"content\" (matching lines, default), \"files\" (file paths only), \"count\" (file:count)",
+				"enum":        []string{"content", "files", "count"},
+			},
+			"include": map[string]any{
+				"type":        "string",
+				"description": "Comma-separated file extensions to search (e.g., \"go,ts,py\")",
+			},
+			"max_results": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of matches to return (default 500)",
+			},
 		},
 		"required": []string{"pattern"},
 	}
@@ -48,10 +65,14 @@ func (t *GrepTool) Parameters() map[string]any {
 
 func (t *GrepTool) Execute(ctx Context, argsJSON string) Result {
 	var args struct {
-		Pattern string `json:"pattern"`
-		Path    string `json:"path"`
-		Glob    string `json:"glob"`
-		Context int    `json:"context"`
+		Pattern         string `json:"pattern"`
+		Path            string `json:"path"`
+		Glob            string `json:"glob"`
+		Context         int    `json:"context"`
+		CaseInsensitive bool   `json:"case_insensitive"`
+		OutputMode      string `json:"output_mode"`
+		Include         string `json:"include"`
+		MaxResults      int    `json:"max_results"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return Result{Error: fmt.Errorf("parse args: %w", err)}
@@ -61,9 +82,38 @@ func (t *GrepTool) Execute(ctx Context, argsJSON string) Result {
 		return Result{Error: fmt.Errorf("pattern is required")}
 	}
 
-	re, err := regexp.Compile(args.Pattern)
+	pattern := args.Pattern
+	if args.CaseInsensitive {
+		pattern = "(?i)" + pattern
+	}
+
+	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return Result{Error: fmt.Errorf("invalid regex: %w", err)}
+	}
+
+	if args.OutputMode == "" {
+		args.OutputMode = "content"
+	}
+
+	maxMatches := 500
+	if args.MaxResults > 0 {
+		maxMatches = args.MaxResults
+	}
+
+	// Parse include extensions into a set
+	var includeExts map[string]bool
+	if args.Include != "" {
+		includeExts = make(map[string]bool)
+		for _, ext := range strings.Split(args.Include, ",") {
+			ext = strings.TrimSpace(ext)
+			if ext != "" {
+				if !strings.HasPrefix(ext, ".") {
+					ext = "." + ext
+				}
+				includeExts[strings.ToLower(ext)] = true
+			}
+		}
 	}
 
 	searchPath := ctx.WorkingDir
@@ -79,14 +129,18 @@ func (t *GrepTool) Execute(ctx Context, argsJSON string) Result {
 	var b strings.Builder
 	matchCount := 0
 	fileCount := 0
-	const maxMatches = 500
+	// fileCounts tracks per-file match counts for "count" output mode
+	var fileCounts []fileMatchCount
 
 	if !info.IsDir() {
 		// Search single file
-		n := searchFile(&b, searchPath, "", re, args.Context, maxMatches)
+		n := searchFile(&b, searchPath, "", re, args.Context, maxMatches, args.OutputMode)
 		matchCount += n
 		if n > 0 {
 			fileCount = 1
+			if args.OutputMode == "count" {
+				fileCounts = append(fileCounts, fileMatchCount{path: searchPath, count: n})
+			}
 		}
 	} else {
 		// Walk directory
@@ -112,15 +166,28 @@ func (t *GrepTool) Execute(ctx Context, argsJSON string) Result {
 				}
 			}
 
+			// Apply include extension filter
+			if includeExts != nil {
+				ext := strings.ToLower(filepath.Ext(d.Name()))
+				if !includeExts[ext] {
+					return nil
+				}
+			}
+
 			relPath, _ := filepath.Rel(searchPath, path)
 			if matchCount >= maxMatches {
 				return filepath.SkipAll
 			}
 
-			n := searchFile(&b, path, relPath, re, args.Context, maxMatches-matchCount)
+			n := searchFile(&b, path, relPath, re, args.Context, maxMatches-matchCount, args.OutputMode)
 			matchCount += n
 			if n > 0 {
 				fileCount++
+				if args.OutputMode == "files" {
+					fmt.Fprintln(&b, relPath)
+				} else if args.OutputMode == "count" {
+					fileCounts = append(fileCounts, fileMatchCount{path: relPath, count: n})
+				}
 			}
 
 			return nil
@@ -134,6 +201,14 @@ func (t *GrepTool) Execute(ctx Context, argsJSON string) Result {
 		}
 	}
 
+	// For non-content modes, build the output from collected data
+	if args.OutputMode == "count" {
+		b.Reset()
+		for _, fc := range fileCounts {
+			fmt.Fprintf(&b, "%s:%d\n", fc.path, fc.count)
+		}
+	}
+
 	if matchCount >= maxMatches {
 		fmt.Fprintf(&b, "\n... (showing first %d matches)\n", maxMatches)
 	}
@@ -144,7 +219,12 @@ func (t *GrepTool) Execute(ctx Context, argsJSON string) Result {
 	}
 }
 
-func searchFile(b *strings.Builder, absPath, displayPath string, re *regexp.Regexp, contextLines, maxMatches int) int {
+type fileMatchCount struct {
+	path  string
+	count int
+}
+
+func searchFile(b *strings.Builder, absPath, displayPath string, re *regexp.Regexp, contextLines, maxMatches int, outputMode string) int {
 	f, err := os.Open(absPath)
 	if err != nil {
 		return 0
@@ -171,6 +251,11 @@ func searchFile(b *strings.Builder, absPath, displayPath string, re *regexp.Rege
 		}
 
 		matchCount++
+
+		// For files/count modes, just count — don't write line content
+		if outputMode == "files" || outputMode == "count" {
+			continue
+		}
 
 		// Print context before
 		start := i - contextLines
