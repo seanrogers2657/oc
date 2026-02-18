@@ -244,7 +244,7 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 
 // computeLayout recalculates panel bounds.
 func (t *TUI) computeLayout() {
-	t.layout = ComputeLayout(t.width, t.height, t.inputArea.LineCount())
+	t.layout = ComputeLayout(t.width, t.height, t.inputArea.LineCount(t.width))
 }
 
 // render draws all components to the next buffer and flushes the diff.

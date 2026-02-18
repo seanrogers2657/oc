@@ -43,8 +43,8 @@ func TestInputAreaNewline(t *testing.T) {
 	if ia.Text() != "line1\nline2" {
 		t.Fatalf("Text() = %q, want %q", ia.Text(), "line1\nline2")
 	}
-	if ia.LineCount() != 2 {
-		t.Fatalf("LineCount() = %d, want 2", ia.LineCount())
+	if ia.LineCount(80) != 2 {
+		t.Fatalf("LineCount() = %d, want 2", ia.LineCount(80))
 	}
 }
 
@@ -119,8 +119,8 @@ func TestInputAreaBackspaceMergeLines(t *testing.T) {
 	if ia.Text() != "helloworld" {
 		t.Fatalf("Text() = %q, want %q", ia.Text(), "helloworld")
 	}
-	if ia.LineCount() != 1 {
-		t.Fatalf("LineCount() = %d, want 1", ia.LineCount())
+	if ia.LineCount(80) != 1 {
+		t.Fatalf("LineCount() = %d, want 1", ia.LineCount(80))
 	}
 }
 
@@ -486,6 +486,113 @@ func TestInputAreaHistoryUpAtBound(t *testing.T) {
 	sendKey(ia, KeyUp) // -> still "only"
 	if ia.Text() != "only" {
 		t.Fatalf("Up at bound: Text() = %q, want %q", ia.Text(), "only")
+	}
+}
+
+func TestInputAreaPromptModeShortQuestion(t *testing.T) {
+	ia := newTestInputArea()
+	ia.SetPromptMode(true, "Allow this action?")
+
+	// Short question fits on one line at width 80
+	if ia.LineCount(80) != 2 { // 1 question line + 1 text line
+		t.Fatalf("LineCount(80) = %d, want 2", ia.LineCount(80))
+	}
+	if !ia.promptMode {
+		t.Fatal("expected promptMode to be true")
+	}
+	if ia.prompt != "? " {
+		t.Fatalf("prompt = %q, want %q", ia.prompt, "? ")
+	}
+}
+
+func TestInputAreaPromptModeLongQuestionWraps(t *testing.T) {
+	ia := newTestInputArea()
+	// Question longer than 40 chars should wrap at width 40
+	question := "Do you want to allow this tool to execute the dangerous bash command?"
+	ia.SetPromptMode(true, question)
+
+	// Available width = 40 - 1 (left margin) = 39
+	// 68-char question wraps to 2 lines at width 39
+	lineCount := ia.LineCount(40)
+	if lineCount < 3 { // at least 2 question lines + 1 text line
+		t.Fatalf("LineCount(40) = %d, want >= 3 (question should wrap)", lineCount)
+	}
+
+	// At width 80 it should fit in fewer lines
+	wideCount := ia.LineCount(80)
+	if wideCount >= lineCount {
+		t.Fatalf("LineCount(80) = %d should be less than LineCount(40) = %d", wideCount, lineCount)
+	}
+}
+
+func TestInputAreaPromptModeRenderWrapsQuestion(t *testing.T) {
+	ia := newTestInputArea()
+	question := "This is a long question that should wrap across multiple lines"
+	ia.SetPromptMode(true, question)
+
+	// Render into a narrow buffer (30 wide)
+	buf := NewScreenBuffer(30, 10)
+	ia.Render(buf, Rect{X: 0, Y: 0, Width: 30, Height: 10})
+
+	// Row 0: border
+	if buf.Cells[0][0].Rune != '─' {
+		t.Fatalf("row 0 should be border, got %q", buf.Cells[0][0].Rune)
+	}
+
+	// Row 1: first line of question should start at col 1 (left margin)
+	if buf.Cells[1][1].Rune != 'T' {
+		t.Fatalf("row 1 col 1 = %q, want 'T' (start of question)", buf.Cells[1][1].Rune)
+	}
+
+	// Row 2: second wrapped line of question should also have content
+	// Available width = 30 - 1 = 29 chars per line
+	// "This is a long question that " = 29 chars on line 1
+	// "should wrap across multiple l" = 29 chars on line 2
+	// "ines" = 4 chars on line 3
+	hasContent := false
+	for x := 1; x < 30; x++ {
+		if buf.Cells[2][x].Rune != 0 {
+			hasContent = true
+			break
+		}
+	}
+	if !hasContent {
+		t.Fatal("row 2 should contain wrapped question text")
+	}
+}
+
+func TestInputAreaPromptModeExitRestoresState(t *testing.T) {
+	ia := newTestInputArea()
+	ia.SetPromptMode(true, "Allow?")
+
+	if ia.prompt != "? " {
+		t.Fatalf("prompt in prompt mode = %q, want %q", ia.prompt, "? ")
+	}
+	if ia.hintText != "Enter=answer" {
+		t.Fatalf("hintText in prompt mode = %q, want %q", ia.hintText, "Enter=answer")
+	}
+
+	ia.SetPromptMode(false, "")
+
+	if ia.promptMode {
+		t.Fatal("expected promptMode to be false after exit")
+	}
+	if ia.prompt != "> " {
+		t.Fatalf("prompt after exit = %q, want %q", ia.prompt, "> ")
+	}
+	// LineCount should not include question lines
+	if ia.LineCount(80) != 1 {
+		t.Fatalf("LineCount(80) after exit = %d, want 1", ia.LineCount(80))
+	}
+}
+
+func TestInputAreaPromptModeEmptyQuestion(t *testing.T) {
+	ia := newTestInputArea()
+	ia.SetPromptMode(true, "")
+
+	// Empty question should not add extra lines
+	if ia.LineCount(80) != 1 {
+		t.Fatalf("LineCount(80) with empty question = %d, want 1", ia.LineCount(80))
 	}
 }
 

@@ -50,13 +50,31 @@ func (ia *InputArea) Text() string {
 	return b.String()
 }
 
-// LineCount returns the number of lines of text (including the question line in prompt mode).
-func (ia *InputArea) LineCount() int {
+// LineCount returns the number of lines of text (including wrapped question lines in prompt mode).
+// width is the available rendering width (used to calculate question wrapping).
+func (ia *InputArea) LineCount(width int) int {
 	n := len(ia.lines)
 	if ia.promptMode && ia.promptQuestion != "" {
-		n++
+		n += ia.questionLineCount(width)
 	}
 	return n
+}
+
+// questionLineCount returns how many lines the prompt question occupies when wrapped to fit.
+func (ia *InputArea) questionLineCount(width int) int {
+	if ia.promptQuestion == "" {
+		return 0
+	}
+	// Available width: total width minus 1 for left margin
+	availWidth := width - 1
+	if availWidth <= 0 {
+		availWidth = 1
+	}
+	lines := wrapText(ia.promptQuestion, availWidth)
+	if len(lines) == 0 {
+		return 1
+	}
+	return len(lines)
 }
 
 // Clear resets the input area.
@@ -231,13 +249,23 @@ func (ia *InputArea) Render(buf *ScreenBuffer, bounds Rect) {
 		buf.Set(x, bounds.Y, '─', borderStyle)
 	}
 
-	// In prompt mode, show the question on the line after the border
+	// In prompt mode, show the question on the lines after the border (word-wrapped)
 	questionLines := 0
 	if ia.promptMode && ia.promptQuestion != "" {
 		questionStyle := Style{FG: NewColor(255, 200, 60), Bold: true}
-		qy := bounds.Y + 1
-		buf.WriteString(bounds.X+1, qy, ia.promptQuestion, questionStyle)
-		questionLines = 1
+		availWidth := bounds.Width - 1 // 1 for left margin
+		if availWidth <= 0 {
+			availWidth = 1
+		}
+		wrapped := wrapText(ia.promptQuestion, availWidth)
+		for i, line := range wrapped {
+			qy := bounds.Y + 1 + i
+			if qy >= bounds.Y+bounds.Height {
+				break
+			}
+			buf.WriteString(bounds.X+1, qy, line, questionStyle)
+		}
+		questionLines = len(wrapped)
 	}
 
 	// Available lines for text (minus top border, question, bottom border, and hint)
