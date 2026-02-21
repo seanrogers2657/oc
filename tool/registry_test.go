@@ -7,13 +7,13 @@ type dummyTool struct {
 	name string
 }
 
-func (d *dummyTool) Name() string               { return d.name }
-func (d *dummyTool) Description() string         { return d.name + " description" }
-func (d *dummyTool) Parameters() map[string]any  { return map[string]any{"type": "object"} }
+func (d *dummyTool) Name() string                   { return d.name }
+func (d *dummyTool) Description() string            { return d.name + " description" }
+func (d *dummyTool) Parameters() map[string]any     { return map[string]any{"type": "object"} }
 func (d *dummyTool) Execute(Context, string) Result { return Result{Output: d.name} }
 
 func TestRegistryRegisterAndGet(t *testing.T) {
-	r := NewRegistry()
+	r := NewToolRegistry()
 	r.Register(&dummyTool{name: "alpha"})
 	r.Register(&dummyTool{name: "beta"})
 
@@ -32,7 +32,7 @@ func TestRegistryRegisterAndGet(t *testing.T) {
 }
 
 func TestRegistryAllPreservesOrder(t *testing.T) {
-	r := NewRegistry()
+	r := NewToolRegistry()
 	names := []string{"charlie", "alpha", "bravo"}
 	for _, n := range names {
 		r.Register(&dummyTool{name: n})
@@ -50,7 +50,7 @@ func TestRegistryAllPreservesOrder(t *testing.T) {
 }
 
 func TestRegistryReRegisterKeepsOrder(t *testing.T) {
-	r := NewRegistry()
+	r := NewToolRegistry()
 	r.Register(&dummyTool{name: "a"})
 	r.Register(&dummyTool{name: "b"})
 	// Re-register "a" with a new instance
@@ -66,7 +66,7 @@ func TestRegistryReRegisterKeepsOrder(t *testing.T) {
 }
 
 func TestRegistryDefs(t *testing.T) {
-	r := NewRegistry()
+	r := NewToolRegistry()
 	r.Register(&dummyTool{name: "tool1"})
 	r.Register(&dummyTool{name: "tool2"})
 
@@ -83,7 +83,7 @@ func TestRegistryDefs(t *testing.T) {
 }
 
 func TestRegistryEmpty(t *testing.T) {
-	r := NewRegistry()
+	r := NewToolRegistry()
 	if len(r.All()) != 0 {
 		t.Fatal("expected empty registry")
 	}

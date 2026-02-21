@@ -35,9 +35,9 @@ type mockTool struct {
 	result tool.Result
 }
 
-func (m *mockTool) Name() string               { return m.name }
-func (m *mockTool) Description() string         { return m.name + " tool" }
-func (m *mockTool) Parameters() map[string]any  { return map[string]any{"type": "object"} }
+func (m *mockTool) Name() string                                 { return m.name }
+func (m *mockTool) Description() string                          { return m.name + " tool" }
+func (m *mockTool) Parameters() map[string]any                   { return map[string]any{"type": "object"} }
 func (m *mockTool) Execute(_ tool.Context, _ string) tool.Result { return m.result }
 
 // --- Mock ToolExecutor ---
@@ -573,7 +573,7 @@ func TestSessionCancel(t *testing.T) {
 	s.Cancel()
 
 	// The session should eventually leave busy state (via error or context cancel)
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(50 * time.Millisecond)
 	for {
 		select {
 		case <-deadline:
@@ -797,8 +797,8 @@ func TestLoopWithMultipleToolCalls(t *testing.T) {
 type promptTool struct{}
 
 func (p *promptTool) Name() string               { return "user_prompt" }
-func (p *promptTool) Description() string         { return "ask user" }
-func (p *promptTool) Parameters() map[string]any  { return map[string]any{"type": "object"} }
+func (p *promptTool) Description() string        { return "ask user" }
+func (p *promptTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
 func (p *promptTool) Execute(ctx tool.Context, argsJSON string) tool.Result {
 	if ctx.Prompter == nil {
 		return tool.Result{Error: fmt.Errorf("no prompter")}

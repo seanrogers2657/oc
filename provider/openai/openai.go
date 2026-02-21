@@ -1,4 +1,4 @@
-package provider
+package openai
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/srogers/oc/provider"
 )
 
 // OpenAIProvider implements Provider for OpenAI-compatible APIs.
@@ -20,18 +22,23 @@ type OpenAIProvider struct {
 
 // NewOpenAI creates a new OpenAI-compatible provider.
 // The name parameter controls what Name() returns (e.g. "openai", "ollama").
-func NewOpenAI(name, apiKey, baseURL string) *OpenAIProvider {
+// An optional *http.Client can be passed; if nil, http.DefaultClient is used.
+func NewOpenAI(name, apiKey, baseURL string, client ...*http.Client) *OpenAIProvider {
 	if name == "" {
 		name = "openai"
 	}
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
 	}
+	c := &http.Client{}
+	if len(client) > 0 && client[0] != nil {
+		c = client[0]
+	}
 	return &OpenAIProvider{
 		name:    name,
 		apiKey:  apiKey,
 		baseURL: baseURL,
-		client:  &http.Client{},
+		client:  c,
 	}
 }
 
@@ -48,7 +55,12 @@ func (p *OpenAIProvider) buildURL() string {
 }
 
 // Stream sends a chat completion request and returns streaming events.
-func (p *OpenAIProvider) Stream(ctx context.Context, cfg ModelConfig, messages []Message, tools []ToolDef) (<-chan StreamEvent, error) {
+func (p *OpenAIProvider) Stream(
+	ctx context.Context,
+	cfg provider.ModelConfig,
+	messages []provider.Message,
+	tools []provider.ToolDef,
+) (<-chan provider.StreamEvent, error) {
 	body := p.buildRequest(cfg, messages, tools)
 
 	reqBytes, err := json.Marshal(body)
@@ -76,21 +88,25 @@ func (p *OpenAIProvider) Stream(ctx context.Context, cfg ModelConfig, messages [
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusTooManyRequests {
-			return nil, &RateLimitError{
+			return nil, &provider.RateLimitError{
 				StatusCode: resp.StatusCode,
 				Message:    string(errBody),
-				RetryAfter: parseRetryAfter(resp),
+				RetryAfter: provider.ParseRetryAfter(resp),
 			}
 		}
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	ch := make(chan StreamEvent, 32)
+	ch := make(chan provider.StreamEvent, 32)
 	go p.readStream(resp.Body, ch)
 	return ch, nil
 }
 
-func (p *OpenAIProvider) buildRequest(cfg ModelConfig, messages []Message, tools []ToolDef) map[string]any {
+func (p *OpenAIProvider) buildRequest(
+	cfg provider.ModelConfig,
+	messages []provider.Message,
+	tools []provider.ToolDef,
+) map[string]any {
 	body := map[string]any{
 		"model":          cfg.Model,
 		"stream":         true,
@@ -114,10 +130,10 @@ func (p *OpenAIProvider) buildRequest(cfg ModelConfig, messages []Message, tools
 			"role": string(m.Role),
 		}
 
-		if m.Role == RoleTool {
+		if m.Role == provider.RoleTool {
 			msg["content"] = m.Content
 			msg["tool_call_id"] = m.ToolCallID
-		} else if m.Role == RoleAssistant && len(m.ToolCalls) > 0 {
+		} else if m.Role == provider.RoleAssistant && len(m.ToolCalls) > 0 {
 			if m.Content != "" {
 				msg["content"] = m.Content
 			} else {
@@ -147,7 +163,7 @@ func (p *OpenAIProvider) buildRequest(cfg ModelConfig, messages []Message, tools
 	if len(tools) > 0 {
 		var defs []map[string]any
 		for _, t := range tools {
-			defs = append(defs, ToolDefToFunctionSchema(t))
+			defs = append(defs, provider.ToolDefToFunctionSchema(t))
 		}
 		body["tools"] = defs
 	}
@@ -156,14 +172,14 @@ func (p *OpenAIProvider) buildRequest(cfg ModelConfig, messages []Message, tools
 }
 
 // readStream parses the SSE stream and sends StreamEvents.
-func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
+func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- provider.StreamEvent) {
 	defer close(ch)
 	defer body.Close()
 
-	reader := NewSSEReader(body)
+	reader := provider.NewSSEReader(body)
 
 	// Accumulate tool calls by index
-	toolCalls := make(map[int]*ToolCall)
+	toolCalls := make(map[int]*provider.ToolCall)
 
 	for {
 		sse, err := reader.Next()
@@ -171,7 +187,7 @@ func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
 			return
 		}
 		if err != nil {
-			ch <- StreamEvent{Type: EventError, Error: err}
+			ch <- provider.StreamEvent{Type: provider.EventError, Error: err}
 			return
 		}
 
@@ -181,16 +197,16 @@ func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
 
 		var chunk openaiChunk
 		if err := json.Unmarshal([]byte(sse.Data), &chunk); err != nil {
-			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("parse chunk: %w", err)}
+			ch <- provider.StreamEvent{Type: provider.EventError, Error: fmt.Errorf("parse chunk: %w", err)}
 			return
 		}
 
 		if len(chunk.Choices) == 0 {
 			// Usage-only chunk (some providers send this at the end)
 			if chunk.Usage != nil {
-				ch <- StreamEvent{
-					Type: EventDone,
-					Usage: &Usage{
+				ch <- provider.StreamEvent{
+					Type: provider.EventDone,
+					Usage: &provider.Usage{
 						InputTokens:  chunk.Usage.PromptTokens,
 						OutputTokens: chunk.Usage.CompletionTokens,
 						TotalTokens:  chunk.Usage.TotalTokens,
@@ -205,7 +221,7 @@ func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
 
 		// Text content
 		if delta.Content != "" {
-			ch <- StreamEvent{Type: EventText, Text: delta.Content}
+			ch <- provider.StreamEvent{Type: provider.EventText, Text: delta.Content}
 		}
 
 		// Reasoning / thinking content (some models emit this)
@@ -214,7 +230,7 @@ func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
 			reasoning = delta.ReasoningOllama
 		}
 		if reasoning != "" {
-			ch <- StreamEvent{Type: EventReasoningDelta, Text: reasoning}
+			ch <- provider.StreamEvent{Type: provider.EventReasoningDelta, Text: reasoning}
 		}
 
 		// Tool calls (accumulated by index)
@@ -222,23 +238,23 @@ func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
 			existing, ok := toolCalls[tc.Index]
 			if !ok {
 				// New tool call
-				existing = &ToolCall{
+				existing = &provider.ToolCall{
 					ID:   tc.ID,
 					Name: tc.Function.Name,
 				}
 				toolCalls[tc.Index] = existing
-				ch <- StreamEvent{
-					Type:     EventToolCallStart,
-					ToolCall: &ToolCall{ID: tc.ID, Name: tc.Function.Name},
+				ch <- provider.StreamEvent{
+					Type:     provider.EventToolCallStart,
+					ToolCall: &provider.ToolCall{ID: tc.ID, Name: tc.Function.Name},
 				}
 			}
 
 			// Accumulate args
 			if tc.Function.Arguments != "" {
 				existing.Args += tc.Function.Arguments
-				ch <- StreamEvent{
-					Type:     EventToolCallDelta,
-					ToolCall: &ToolCall{ID: existing.ID, Name: existing.Name, Args: tc.Function.Arguments},
+				ch <- provider.StreamEvent{
+					Type:     provider.EventToolCallDelta,
+					ToolCall: &provider.ToolCall{ID: existing.ID, Name: existing.Name, Args: tc.Function.Arguments},
 				}
 			}
 		}
@@ -248,30 +264,30 @@ func (p *OpenAIProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
 			// Emit tool call end events
 			if choice.FinishReason == "tool_calls" {
 				for _, tc := range toolCalls {
-					ch <- StreamEvent{
-						Type:     EventToolCallEnd,
-						ToolCall: &ToolCall{ID: tc.ID, Name: tc.Name, Args: tc.Args},
+					ch <- provider.StreamEvent{
+						Type:     provider.EventToolCallEnd,
+						ToolCall: &provider.ToolCall{ID: tc.ID, Name: tc.Name, Args: tc.Args},
 					}
 				}
 			}
 
-			usage := (*Usage)(nil)
+			usage := (*provider.Usage)(nil)
 			if chunk.Usage != nil {
-				usage = &Usage{
+				usage = &provider.Usage{
 					InputTokens:  chunk.Usage.PromptTokens,
 					OutputTokens: chunk.Usage.CompletionTokens,
 					TotalTokens:  chunk.Usage.TotalTokens,
 				}
 			}
 
-			ch <- StreamEvent{
-				Type:         EventDone,
+			ch <- provider.StreamEvent{
+				Type:         provider.EventDone,
 				FinishReason: choice.FinishReason,
 				Usage:        usage,
 			}
 
 			// Reset tool calls for potential next round
-			toolCalls = make(map[int]*ToolCall)
+			toolCalls = make(map[int]*provider.ToolCall)
 		}
 	}
 }
@@ -289,10 +305,10 @@ type openaiChoice struct {
 }
 
 type openaiDelta struct {
-	Content          string            `json:"content,omitempty"`
-	Reasoning        string            `json:"reasoning_content,omitempty"`
-	ReasoningOllama  string            `json:"reasoning,omitempty"`
-	ToolCalls        []openaiToolDelta `json:"tool_calls,omitempty"`
+	Content         string            `json:"content,omitempty"`
+	Reasoning       string            `json:"reasoning_content,omitempty"`
+	ReasoningOllama string            `json:"reasoning,omitempty"`
+	ToolCalls       []openaiToolDelta `json:"tool_calls,omitempty"`
 }
 
 type openaiToolDelta struct {

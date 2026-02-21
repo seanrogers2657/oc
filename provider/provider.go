@@ -12,7 +12,12 @@ type Provider interface {
 	// Stream sends the conversation to the model and returns a channel of events.
 	// The channel is closed when the stream ends. Caller must drain it.
 	// The ctx can be cancelled to abort the stream.
-	Stream(ctx context.Context, cfg ModelConfig, messages []Message, tools []ToolDef) (<-chan StreamEvent, error)
+	Stream(
+		ctx context.Context,
+		cfg ModelConfig,
+		messages []Message,
+		tools []ToolDef,
+	) (<-chan StreamEvent, error)
 }
 
 // Authenticator applies authentication credentials to an HTTP request.

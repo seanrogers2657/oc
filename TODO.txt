@@ -6,7 +6,6 @@
 * [feature] compact conversation, recent messages more relevant that older messages and show the current context fill percentage in status line
 * [feature] project based settings, basically a .oc/ folder with all project based configurations that we should adhere to.
 * [feature] add the ability to simulate rate limits in the oc tool. possibly declared in project configuration.
-* [feature] copy pasting data into the terminal?
 * [feature] agents
 * [feature] sessions?
 * [feature] system prompt?

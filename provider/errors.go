@@ -21,10 +21,10 @@ func (e *RateLimitError) Error() string {
 	return fmt.Sprintf("rate limited (HTTP %d): %s", e.StatusCode, e.Message)
 }
 
-// parseRetryAfter reads the Retry-After header from an HTTP response.
+// ParseRetryAfter reads the Retry-After header from an HTTP response.
 // It supports both delay-seconds and HTTP-date formats.
 // Returns 0 if the header is missing or unparseable.
-func parseRetryAfter(resp *http.Response) time.Duration {
+func ParseRetryAfter(resp *http.Response) time.Duration {
 	val := resp.Header.Get("Retry-After")
 	if val == "" {
 		return 0

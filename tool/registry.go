@@ -2,19 +2,19 @@ package tool
 
 import "github.com/srogers/oc/provider"
 
-// Registry is a name->Tool lookup.
-type Registry struct {
+// ToolRegistry is a name->Tool lookup.
+type ToolRegistry struct {
 	tools map[string]Tool
 	order []string // insertion order for deterministic iteration
 }
 
-// NewRegistry creates an empty tool registry.
-func NewRegistry() *Registry {
-	return &Registry{tools: make(map[string]Tool)}
+// NewToolRegistry creates an empty tool registry.
+func NewToolRegistry() *ToolRegistry {
+	return &ToolRegistry{tools: make(map[string]Tool)}
 }
 
 // Register adds a tool to the registry.
-func (r *Registry) Register(t Tool) {
+func (r *ToolRegistry) Register(t Tool) {
 	name := t.Name()
 	if _, exists := r.tools[name]; !exists {
 		r.order = append(r.order, name)
@@ -23,13 +23,13 @@ func (r *Registry) Register(t Tool) {
 }
 
 // Get returns a tool by name.
-func (r *Registry) Get(name string) (Tool, bool) {
+func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	t, ok := r.tools[name]
 	return t, ok
 }
 
 // All returns all registered tools in insertion order.
-func (r *Registry) All() []Tool {
+func (r *ToolRegistry) All() []Tool {
 	result := make([]Tool, 0, len(r.order))
 	for _, name := range r.order {
 		result = append(result, r.tools[name])
@@ -38,7 +38,7 @@ func (r *Registry) All() []Tool {
 }
 
 // Defs converts all tools to provider.ToolDef for sending to the model.
-func (r *Registry) Defs() []provider.ToolDef {
+func (r *ToolRegistry) Defs() []provider.ToolDef {
 	defs := make([]provider.ToolDef, 0, len(r.order))
 	for _, name := range r.order {
 		t := r.tools[name]

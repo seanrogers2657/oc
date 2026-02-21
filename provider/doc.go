@@ -1,14 +1,14 @@
-// Package provider implements AI model communication via streaming APIs.
+// Package provider defines the AI model communication interface and shared types.
 //
 // The Provider interface defines a single Stream method that returns a channel
-// of StreamEvent values. Two implementations are provided:
+// of StreamEvent values. Implementations live in sub-packages:
 //
-//   - AnthropicProvider — Anthropic Messages API (native format)
-//   - OpenAIProvider    — OpenAI-compatible chat completions (also used for
+//   - provider/anthropic — Anthropic Messages API (API key and subscription auth)
+//   - provider/openai    — OpenAI-compatible chat completions (also used for
 //     Ollama, LM Studio, vLLM, and other compatible servers)
 //
-// Both providers parse SSE (Server-Sent Events) streams via shared helpers in
-// sse.go and emit a unified StreamEvent type covering text deltas, tool call
+// Both implementations parse SSE (Server-Sent Events) streams via shared helpers
+// in sse.go and emit a unified StreamEvent type covering text deltas, tool call
 // lifecycle (start/delta/end), reasoning (extended thinking), usage, and errors.
 //
 // Key types:
@@ -21,6 +21,4 @@
 //   - ModelConfig     — per-request params (model, temperature, max_tokens)
 //   - Usage           — token consumption counters
 //   - RateLimitError  — typed error with RetryAfter for automatic backoff
-//
-// This package has no dependencies beyond stdlib.
 package provider

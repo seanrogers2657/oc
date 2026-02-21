@@ -1,4 +1,4 @@
-package provider
+package anthropic
 
 import (
 	"bytes"
@@ -7,42 +7,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/srogers/oc/provider"
 )
 
-// AnthropicProvider implements Provider for the Anthropic Messages API.
-type AnthropicProvider struct {
-	auth   Authenticator
-	client *http.Client
-}
-
-// NewAnthropic creates a new Anthropic provider with API key authentication.
-func NewAnthropic(apiKey string) *AnthropicProvider {
-	return &AnthropicProvider{
-		auth:   &APIKeyAuth{Key: apiKey},
-		client: &http.Client{},
-	}
-}
-
-// NewAnthropicWithAuth creates a new Anthropic provider with a custom authenticator.
-func NewAnthropicWithAuth(auth Authenticator) *AnthropicProvider {
-	return &AnthropicProvider{
-		auth:   auth,
-		client: &http.Client{},
-	}
-}
-
-func (p *AnthropicProvider) Name() string { return "anthropic" }
-
 // Stream sends a messages request and returns streaming events.
-func (p *AnthropicProvider) Stream(ctx context.Context, cfg ModelConfig, messages []Message, tools []ToolDef) (<-chan StreamEvent, error) {
-	body := p.buildRequest(cfg, messages, tools)
+func Stream(
+	ctx context.Context,
+	cfg provider.ModelConfig,
+	messages []provider.Message,
+	tools []provider.ToolDef,
+	client http.Client,
+	auth provider.Authenticator,
+	baseUrl string,
+) (<-chan provider.StreamEvent, error) {
+	body := buildRequest(cfg, messages, tools)
 
 	reqBytes, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(reqBytes))
+	url := baseUrl + "/v1/messages"
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBytes))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -50,11 +36,11 @@ func (p *AnthropicProvider) Stream(ctx context.Context, cfg ModelConfig, message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	if err := p.auth.Authenticate(req); err != nil {
+	if err := auth.Authenticate(req); err != nil {
 		return nil, fmt.Errorf("authenticate: %w", err)
 	}
 
-	resp, err := p.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -63,21 +49,25 @@ func (p *AnthropicProvider) Stream(ctx context.Context, cfg ModelConfig, message
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusTooManyRequests {
-			return nil, &RateLimitError{
+			return nil, &provider.RateLimitError{
 				StatusCode: resp.StatusCode,
 				Message:    string(errBody),
-				RetryAfter: parseRetryAfter(resp),
+				RetryAfter: provider.ParseRetryAfter(resp),
 			}
 		}
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	ch := make(chan StreamEvent, 32)
-	go p.readStream(resp.Body, ch)
+	ch := make(chan provider.StreamEvent, 32)
+	go readStream(resp.Body, ch)
 	return ch, nil
 }
 
-func (p *AnthropicProvider) buildRequest(cfg ModelConfig, messages []Message, tools []ToolDef) map[string]any {
+func buildRequest(
+	cfg provider.ModelConfig,
+	messages []provider.Message,
+	tools []provider.ToolDef,
+) map[string]any {
 	body := map[string]any{
 		"model":  cfg.Model,
 		"stream": true,
@@ -101,12 +91,12 @@ func (p *AnthropicProvider) buildRequest(cfg ModelConfig, messages []Message, to
 	var apiMsgs []map[string]any
 
 	for _, m := range messages {
-		if m.Role == RoleSystem {
+		if m.Role == provider.RoleSystem {
 			system = m.Content
 			continue
 		}
 
-		if m.Role == RoleAssistant && len(m.ToolCalls) > 0 {
+		if m.Role == provider.RoleAssistant && len(m.ToolCalls) > 0 {
 			// Assistant message with tool use
 			var content []map[string]any
 			if m.Content != "" {
@@ -131,7 +121,7 @@ func (p *AnthropicProvider) buildRequest(cfg ModelConfig, messages []Message, to
 				"role":    "assistant",
 				"content": content,
 			})
-		} else if m.Role == RoleTool {
+		} else if m.Role == provider.RoleTool {
 			// Tool result
 			apiMsgs = append(apiMsgs, map[string]any{
 				"role": "user",
@@ -160,7 +150,7 @@ func (p *AnthropicProvider) buildRequest(cfg ModelConfig, messages []Message, to
 	if len(tools) > 0 {
 		var defs []map[string]any
 		for _, t := range tools {
-			defs = append(defs, ToolDefToAnthropicSchema(t))
+			defs = append(defs, provider.ToolDefToAnthropicSchema(t))
 		}
 		body["tools"] = defs
 	}
@@ -169,15 +159,18 @@ func (p *AnthropicProvider) buildRequest(cfg ModelConfig, messages []Message, to
 }
 
 // readStream parses the Anthropic SSE stream and sends StreamEvents.
-func (p *AnthropicProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent) {
+func readStream(
+	body io.ReadCloser,
+	ch chan<- provider.StreamEvent,
+) {
 	defer close(ch)
 	defer body.Close()
 
-	reader := NewSSEReader(body)
+	reader := provider.NewSSEReader(body)
 
 	// Track current content block for accumulating tool call args
 	var currentBlock *anthropicContentBlock
-	var usage *Usage
+	var usage *provider.Usage
 
 	for {
 		sse, err := reader.Next()
@@ -185,7 +178,7 @@ func (p *AnthropicProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent
 			return
 		}
 		if err != nil {
-			ch <- StreamEvent{Type: EventError, Error: err}
+			ch <- provider.StreamEvent{Type: provider.EventError, Error: err}
 			return
 		}
 
@@ -193,7 +186,7 @@ func (p *AnthropicProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent
 		case "message_start":
 			var msg anthropicMessageStart
 			if err := json.Unmarshal([]byte(sse.Data), &msg); err == nil && msg.Message.Usage != nil {
-				usage = &Usage{
+				usage = &provider.Usage{
 					InputTokens: msg.Message.Usage.InputTokens,
 				}
 			}
@@ -207,16 +200,16 @@ func (p *AnthropicProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent
 			case "text":
 				// Text block starting
 			case "thinking":
-				ch <- StreamEvent{Type: EventReasoningStart}
+				ch <- provider.StreamEvent{Type: provider.EventReasoningStart}
 			case "tool_use":
 				currentBlock = &anthropicContentBlock{
 					Type: "tool_use",
 					ID:   block.ContentBlock.ID,
 					Name: block.ContentBlock.Name,
 				}
-				ch <- StreamEvent{
-					Type:     EventToolCallStart,
-					ToolCall: &ToolCall{ID: block.ContentBlock.ID, Name: block.ContentBlock.Name},
+				ch <- provider.StreamEvent{
+					Type:     provider.EventToolCallStart,
+					ToolCall: &provider.ToolCall{ID: block.ContentBlock.ID, Name: block.ContentBlock.Name},
 				}
 			}
 
@@ -227,24 +220,24 @@ func (p *AnthropicProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent
 			}
 			switch delta.Delta.Type {
 			case "text_delta":
-				ch <- StreamEvent{Type: EventText, Text: delta.Delta.Text}
+				ch <- provider.StreamEvent{Type: provider.EventText, Text: delta.Delta.Text}
 			case "thinking_delta":
-				ch <- StreamEvent{Type: EventReasoningDelta, Text: delta.Delta.Thinking}
+				ch <- provider.StreamEvent{Type: provider.EventReasoningDelta, Text: delta.Delta.Thinking}
 			case "input_json_delta":
 				if currentBlock != nil {
 					currentBlock.PartialJSON += delta.Delta.PartialJSON
-					ch <- StreamEvent{
-						Type:     EventToolCallDelta,
-						ToolCall: &ToolCall{ID: currentBlock.ID, Name: currentBlock.Name, Args: delta.Delta.PartialJSON},
+					ch <- provider.StreamEvent{
+						Type:     provider.EventToolCallDelta,
+						ToolCall: &provider.ToolCall{ID: currentBlock.ID, Name: currentBlock.Name, Args: delta.Delta.PartialJSON},
 					}
 				}
 			}
 
 		case "content_block_stop":
 			if currentBlock != nil && currentBlock.Type == "tool_use" {
-				ch <- StreamEvent{
-					Type:     EventToolCallEnd,
-					ToolCall: &ToolCall{ID: currentBlock.ID, Name: currentBlock.Name, Args: currentBlock.PartialJSON},
+				ch <- provider.StreamEvent{
+					Type:     provider.EventToolCallEnd,
+					ToolCall: &provider.ToolCall{ID: currentBlock.ID, Name: currentBlock.Name, Args: currentBlock.PartialJSON},
 				}
 				currentBlock = nil
 			}
@@ -266,8 +259,8 @@ func (p *AnthropicProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent
 					finishReason = delta.Delta.StopReason
 				}
 
-				ch <- StreamEvent{
-					Type:         EventDone,
+				ch <- provider.StreamEvent{
+					Type:         provider.EventDone,
 					FinishReason: finishReason,
 					Usage:        usage,
 				}
@@ -277,8 +270,8 @@ func (p *AnthropicProvider) readStream(body io.ReadCloser, ch chan<- StreamEvent
 			// Stream complete
 
 		case "error":
-			ch <- StreamEvent{
-				Type:  EventError,
+			ch <- provider.StreamEvent{
+				Type:  provider.EventError,
 				Error: fmt.Errorf("anthropic stream error: %s", sse.Data),
 			}
 			return

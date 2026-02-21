@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/srogers/oc/config"
 	"github.com/srogers/oc/event"
 	"github.com/srogers/oc/provider"
+	"github.com/srogers/oc/provider/anthropic"
+	"github.com/srogers/oc/provider/openai"
 	"github.com/srogers/oc/session"
 	"github.com/srogers/oc/tool"
 	"github.com/srogers/oc/tui"
@@ -87,61 +90,51 @@ func main() {
 }
 
 func run(c *cli.Context) error {
-	cfg := config.Load()
+	config := config.Load()
 
 	// CLI flags override env vars
 	if v := c.String("provider"); v != "" {
-		cfg.Provider = v
+		config.Provider = v
 	}
 	if v := c.String("model"); v != "" {
-		cfg.Model = v
+		config.Model = v
 	}
 	if v := c.String("api-key"); v != "" {
-		cfg.APIKey = v
+		config.APIKey = v
 	}
 	if v := c.String("base-url"); v != "" {
-		cfg.BaseURL = v
+		config.BaseURL = v
 	}
 
 	// Select provider adapter
 	var p provider.Provider
 	var providerDetail string
+	var err error
 	enableTools := true
-	switch cfg.Provider {
+	switch config.Provider {
 	case "anthropic", "claude-max":
-		if cfg.Provider == "anthropic" && cfg.APIKey != "" {
-			p = provider.NewAnthropic(cfg.APIKey)
+		if config.Provider == "anthropic" && config.APIKey != "" {
+			p, err = anthropic.NewAnthropicApiProvider(config, nil, anthropic.AnthropicBaseUrl)
 		} else {
-			// Try stored OAuth token (from 'oc login')
-			oauthCfg := auth.AnthropicOAuth()
-			store := auth.NewTokenStore()
-			token, err := store.Load()
-			if err != nil {
-				return fmt.Errorf("failed to load auth token: %w", err)
-			}
-			if token != nil {
-				bearer := &auth.BearerAuth{Config: oauthCfg, Store: store, Token: token}
-				p = provider.NewAnthropicWithAuth(bearer)
-				providerDetail = "max"
-			} else if cfg.Provider == "claude-max" {
-				return fmt.Errorf("not authenticated — run 'oc login' first")
-			} else {
-				return fmt.Errorf("API key required for Anthropic (set ANTHROPIC_API_KEY or OC_API_KEY, or run 'oc login')")
-			}
+			p, err = anthropic.NewAnthropicSubscriptionProvider(config, nil, anthropic.AnthropicBaseUrl)
 		}
 	default:
 		// OpenAI-compatible (covers openai, ollama, lm studio, vllm, etc.)
-		if cfg.BaseURL == "" {
-			return fmt.Errorf("base URL required for provider %q (set OC_BASE_URL)", cfg.Provider)
+		if config.BaseURL == "" {
+			return fmt.Errorf("base URL required for provider %q (set OC_BASE_URL)", config.Provider)
 		}
-		p = provider.NewOpenAI(cfg.Provider, cfg.APIKey, cfg.BaseURL)
-		if cfg.Provider == "ollama" {
-			enableTools = checkOllamaTools(cfg.BaseURL, cfg.Model)
+		p = openai.NewOpenAI(config.Provider, config.APIKey, config.BaseURL)
+		if config.Provider == "ollama" {
+			enableTools = checkOllamaTools(config.BaseURL, config.Model)
 		}
 	}
 
+	if err != nil {
+		return err
+	}
+
 	// Register tools (skip for models that don't support tool calling)
-	tools := tool.NewRegistry()
+	tools := tool.NewToolRegistry()
 	if enableTools {
 		tools.Register(tool.NewBash())
 		tools.Register(tool.NewRead())
@@ -153,13 +146,13 @@ func run(c *cli.Context) error {
 	}
 
 	// Build model config
-	modelCfg := provider.ModelConfig{Model: cfg.Model}
-	if cfg.Temperature != 0 {
-		t := cfg.Temperature
+	modelCfg := provider.ModelConfig{Model: config.Model}
+	if config.Temperature != 0 {
+		t := config.Temperature
 		modelCfg.Temperature = &t
 	}
-	if cfg.MaxTokens != 0 {
-		m := cfg.MaxTokens
+	if config.MaxTokens != 0 {
+		m := config.MaxTokens
 		modelCfg.MaxTokens = &m
 	}
 
@@ -195,7 +188,7 @@ func run(c *cli.Context) error {
 			}
 			tokens := sess.GetTokens()
 			return tui.StatusInfo{
-				Model:         cfg.Model,
+				Model:         config.Model,
 				Provider:      p.Name(),
 				Detail:        providerDetail,
 				Status:        status,
@@ -300,10 +293,5 @@ func checkOllamaTools(baseURL, model string) bool {
 		return false
 	}
 
-	for _, cap := range result.Capabilities {
-		if cap == "tools" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(result.Capabilities, "tools")
 }

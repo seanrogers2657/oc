@@ -63,7 +63,7 @@ func TestParseRetryAfter(t *testing.T) {
 			if tt.header != "" {
 				resp.Header.Set("Retry-After", tt.header)
 			}
-			got := parseRetryAfter(resp)
+			got := ParseRetryAfter(resp)
 			if got != tt.want {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
@@ -75,7 +75,7 @@ func TestParseRetryAfter(t *testing.T) {
 		future := time.Now().Add(10 * time.Second).UTC().Format(time.RFC1123)
 		resp := &http.Response{Header: http.Header{}}
 		resp.Header.Set("Retry-After", future)
-		got := parseRetryAfter(resp)
+		got := ParseRetryAfter(resp)
 		// Should be roughly 10 seconds (allow some tolerance)
 		if got < 8*time.Second || got > 12*time.Second {
 			t.Errorf("expected ~10s, got %v", got)
@@ -86,7 +86,7 @@ func TestParseRetryAfter(t *testing.T) {
 		past := time.Now().Add(-10 * time.Second).UTC().Format(time.RFC1123)
 		resp := &http.Response{Header: http.Header{}}
 		resp.Header.Set("Retry-After", past)
-		got := parseRetryAfter(resp)
+		got := ParseRetryAfter(resp)
 		if got != 0 {
 			t.Errorf("expected 0 for past date, got %v", got)
 		}
