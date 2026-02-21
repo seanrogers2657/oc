@@ -6,11 +6,13 @@ import (
 	"strings"
 )
 
-// StyledLine represents a rendered line with styling information
+// StyledLine represents a rendered line with styling information.
+// Prefix (e.g. "+", "-", " ") is separate so the TUI can style it differently.
 type StyledLine struct {
-	Text       string
-	Background string // color name or hex
-	Foreground string // color name or hex  
+	Prefix     string // "+", "-", " ", or "" for header lines
+	Text       string // the content (without prefix)
+	Background string // color name or hex (applies to Text only)
+	Foreground string // color name or hex
 	Bold       bool
 }
 
@@ -55,44 +57,68 @@ func FormatDiffForTUI(diffResult *DiffResult, maxWidth int) []StyledLine {
 	return lines
 }
 
-// formatDiffLine formats a single diff line with appropriate styling
+// formatDiffLine formats a single diff line with appropriate styling.
+// Tabs in content are expanded to spaces so the screen buffer renders correctly.
 func formatDiffLine(diffLine DiffLine, maxWidth int) StyledLine {
-	var prefix string
 	var style StyledLine
 
 	switch diffLine.Type {
 	case LineContext:
-		prefix = " "
 		style = StyledLine{
+			Prefix:     " ",
 			Foreground: "white",
 		}
 	case LineAdded:
-		prefix = "+"
 		style = StyledLine{
+			Prefix:     "+",
 			Background: "dark_green",
 			Foreground: "white",
 		}
 	case LineRemoved:
-		prefix = "-"
 		style = StyledLine{
+			Prefix:     "-",
 			Background: "dark_red",
 			Foreground: "white",
 		}
 	}
 
-	// Format line with numbers and content
-	var lineStr string
-	if diffLine.Type == LineRemoved {
-		lineStr = fmt.Sprintf("%s%s", prefix, diffLine.Content)
-	} else if diffLine.Type == LineAdded {
-		lineStr = fmt.Sprintf("%s%s", prefix, diffLine.Content)
-	} else {
-		// Context line
-		lineStr = fmt.Sprintf("%s%s", prefix, diffLine.Content)
-	}
+	content := expandTabs(diffLine.Content, tabWidth)
 
-	style.Text = truncateToWidth(lineStr, maxWidth)
+	// Reserve 1 column for the prefix when truncating
+	if maxWidth > 1 {
+		style.Text = truncateToWidth(content, maxWidth-1)
+	} else {
+		style.Text = content
+	}
 	return style
+}
+
+const tabWidth = 4
+
+// expandTabs replaces tab characters with spaces, aligning to tab stops.
+func expandTabs(s string, tabSize int) string {
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+	var b strings.Builder
+	col := 0
+	for _, r := range s {
+		switch r {
+		case '\t':
+			spaces := tabSize - (col % tabSize)
+			for range spaces {
+				b.WriteByte(' ')
+			}
+			col += spaces
+		case '\n':
+			b.WriteByte('\n')
+			col = 0
+		default:
+			b.WriteRune(r)
+			col++
+		}
+	}
+	return b.String()
 }
 
 // FormatDiffHeader creates a summary header for a diff

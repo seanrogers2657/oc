@@ -393,11 +393,14 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 				break
 			}
 			
-			// Convert diff styling to TUI styling
-			style := diffLineToStyle(dl)
-			lines = append(lines, renderedLine{spans: []styledSpan{
-				{text: "  " + dl.Text, style: style},
-			}})
+			// Convert diff styling to TUI styling.
+			// Prefix (+/-/ ) gets foreground color only; content gets background color.
+			contentStyle := diffLineToStyle(dl)
+			prefixStyle := Style{FG: contentStyle.FG}
+			var spans []styledSpan
+			spans = append(spans, styledSpan{text: "  " + dl.Prefix, style: prefixStyle})
+			spans = append(spans, styledSpan{text: dl.Text, style: contentStyle})
+			lines = append(lines, renderedLine{spans: spans})
 		}
 	} else if tc.Output != "" {
 		// Fall back to showing regular output if no diff available
