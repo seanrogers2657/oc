@@ -1,6 +1,4 @@
-* [feature] switch model mid-session - a :model command (e.g. ":model claude-opus-4") to change models without restarting. Useful for escalating complex tasks to a more capable model.
 * [feature] render past the terminal screen so that users scrolling up and see previous messages?
-* [feature] new tool - searching the web
 * [bug] prompts that are too big go off screen, they should be wrapped
 * [feature] doctor command so that users can check which possible providers are setup and if something went wrong
 * [feature] should know what providers are setup so that we can offer as much mid session model switching as possible
@@ -11,6 +9,7 @@
 * [feature] sandbox environment. Using simple allow list semantics and project based files (.oc/sandbox.json), lets setup the ability to limit the power of oc so it doesn't cause damage.
 * [feature] compact conversation, recent messages more relevant that older messages and show the current context fill percentage in status line, manual for now, automatic later
 * [feature] add the ability to simulate rate limits in the oc tool. possibly declared in project configuration.
+* [feature] i guess we can do a dedicated "plan mode"
 * [feature] subagents
 * [feature] continue sessions?
 * [feature] system prompt?
@@ -22,4 +21,7 @@
 * [feature] undo last edit/write - a :undo command that reverts the last file modification using the diff already stored on the tool result.
 * [feature] token budget per turn - let users cap how many tokens a single agentic loop can consume before pausing for confirmation, preventing runaway tool loops.
 * [feature] streaming markdown - render markdown progressively during streaming instead of after the full message is received.
+* [feature] custom commands
+* [feature] marketplaces (for updatable custom commands & groupings
 * [feature] auto compact strategies
+* [feature] auto updater? 

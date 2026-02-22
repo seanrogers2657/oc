@@ -17,7 +17,8 @@
 //   - edit  — find-and-replace in files
 //   - glob  — find files by pattern
 //   - grep  — search file contents with regex
-//   - ask   — ask the user a question (uses Prompter)
+//   - ask        — ask the user a question (uses Prompter)
+//   - web_search — search the web via DuckDuckGo
 //
 // path.go contains shared path validation helpers used by file-based tools.
 //

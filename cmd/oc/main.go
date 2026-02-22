@@ -144,6 +144,7 @@ func run(c *cli.Context) error {
 		tools.Register(tool.NewGlob())
 		tools.Register(tool.NewGrep())
 		tools.Register(tool.NewAsk())
+		tools.Register(tool.NewWebSearch())
 	}
 
 	// Build model config
