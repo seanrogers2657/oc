@@ -17,13 +17,13 @@ import (
 
 // Deps holds the injected dependencies for the UI.
 type Deps struct {
-	Source        EventSource            // subscribe to session events
-	OnInput       InputHandler           // called when user submits text
-	Status        StatusProvider         // returns current status info
-	Messages      MessageListProvider    // returns current messages
+	Source        EventSource             // subscribe to session events
+	OnInput       InputHandler            // called when user submits text
+	Status        StatusProvider          // returns current status info
+	Messages      MessageListProvider     // returns current messages
 	Commands      *common.CommandRegistry // registered commands for command palette
-	FetchModels   FetchModels            // fetches available models from provider
-	OnModelSelect OnModelSelect          // called when user picks a model
+	FetchModels   FetchModels             // fetches available models from provider
+	OnModelSelect OnModelSelect           // called when user picks a model
 }
 
 // UI is the top-level terminal application.
@@ -44,6 +44,10 @@ type UI struct {
 	modelPicker *common.ModelPicker
 
 	layout Layout
+
+	// Scrollback tracking
+	prevScrollOffset  int // last known MessageList scroll offset
+	scrollbackEmitted int // total lines pushed to terminal scrollback
 
 	// Prompt mode state (for tool asking user a question)
 	promptResponse chan<- string // non-nil while awaiting a prompt answer
@@ -87,10 +91,14 @@ func (t *UI) Run(ctx context.Context) error {
 	}
 	defer term.Restore(fd, oldState)
 
-	// Setup terminal
+	// Setup terminal — use main screen buffer so content scrolls into scrollback
 	w := os.Stdout
-	io.WriteString(w, common.AltScreenEnter+common.CursorHide+common.BracketedPasteEnable+common.ClearScreen)
-	defer io.WriteString(w, common.BracketedPasteDisable+common.CursorShow+common.AltScreenExit)
+	io.WriteString(w, strings.Repeat("\n", t.height)+common.CursorTo(0, 0))
+	io.WriteString(w, common.CursorHide+common.BracketedPasteEnable+common.ClearScreen)
+	defer func() {
+		io.WriteString(w, common.CursorTo(0, t.height-1)+"\n")
+		io.WriteString(w, common.BracketedPasteDisable+common.CursorShow+common.ResetStyle)
+	}()
 
 	// Initialize buffers
 	t.current = common.NewScreenBuffer(t.width, t.height)
@@ -212,8 +220,9 @@ func (t *UI) handleEvent(ev common.Event, cancel context.CancelFunc) bool {
 		t.height = e.Height
 		t.current = common.NewScreenBuffer(t.width, t.height)
 		t.next = common.NewScreenBuffer(t.width, t.height)
-		// Clear terminal so stale content from old size is wiped
-		io.WriteString(os.Stdout, common.ClearScreen)
+		// Just clear and re-render — no newlines, which would push
+		// content (or blank rows) into scrollback on every resize.
+		io.WriteString(os.Stdout, common.CursorTo(0, 0)+common.ClearScreen)
 		t.computeLayout()
 		t.fullRender()
 
@@ -267,6 +276,14 @@ func (t *UI) computeLayout() {
 
 // render draws all components to the next buffer and flushes the diff.
 func (t *UI) render() {
+	// If the terminal has already resized but we haven't processed the
+	// ResizeEvent yet, skip this render. Writing rows past the new
+	// (shorter) terminal height would cause the terminal to scroll,
+	// pushing StatusBar/InputArea into scrollback.
+	if w, h, err := term.GetSize(int(os.Stdin.Fd())); err == nil && (w != t.width || h != t.height) {
+		return
+	}
+
 	t.next.Clear()
 
 	t.statusBar.Render(t.next, t.layout.StatusBar)
@@ -280,11 +297,42 @@ func (t *UI) render() {
 		t.modelPicker.Render(t.next, t.width, t.height)
 	}
 
-	// Compute diff and write to stdout
-	diff := t.next.Diff(t.current)
-	if diff != "" {
-		io.WriteString(os.Stdout, diff)
+	// Scrollback: push lines into terminal scrollback when auto-scrolling
+	currentOffset, isAutoScroll := t.messageList.ScrollInfo()
+	delta := currentOffset - t.prevScrollOffset
+	w := os.Stdout
+
+	if delta > 0 && isAutoScroll && t.scrollbackEmitted < 1000 {
+		// Cap to MessageList viewport height so we never scroll the
+		// StatusBar or InputArea rows into the terminal scrollback.
+		if delta > t.layout.MessageList.Height {
+			delta = t.layout.MessageList.Height
+		}
+		// Cap to remaining budget
+		if push := 1000 - t.scrollbackEmitted; delta > push {
+			delta = push
+		}
+		// Scroll terminal: newlines at bottom push top rows into scrollback
+		io.WriteString(w, common.CursorTo(0, t.height-1)+strings.Repeat("\n", delta))
+		t.scrollbackEmitted += delta
+		// Full render — viewport content shifted, diff would be wrong
+		io.WriteString(w, t.next.FullRender())
+	} else {
+		diff := t.next.Diff(t.current)
+		if diff != "" {
+			io.WriteString(w, diff)
+		}
 	}
+
+	// Only update prevScrollOffset during auto-scroll to avoid
+	// spurious deltas when user manually scrolls then resumes
+	if isAutoScroll {
+		t.prevScrollOffset = currentOffset
+	}
+
+	// Park cursor at top-left so terminal resize doesn't push bottom
+	// rows (StatusBar, InputArea) into scrollback.
+	io.WriteString(os.Stdout, common.CursorTo(0, 0))
 
 	// Swap buffers
 	t.current, t.next = t.next, t.current
@@ -306,6 +354,14 @@ func (t *UI) fullRender() {
 	}
 
 	io.WriteString(os.Stdout, t.next.FullRender())
+
+	// Sync scroll offset so render() doesn't see a stale delta
+	currentOffset, _ := t.messageList.ScrollInfo()
+	t.prevScrollOffset = currentOffset
+
+	// Park cursor at top-left so terminal resize doesn't push bottom
+	// rows (StatusBar, InputArea) into scrollback.
+	io.WriteString(os.Stdout, common.CursorTo(0, 0))
 
 	// Swap buffers
 	t.current, t.next = t.next, t.current

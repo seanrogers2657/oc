@@ -1,4 +1,7 @@
-* [feature] render past the terminal screen so that users scrolling up and see previous messages?
+* [bug] rendering when resizing shows the prompt sometimes, investigate and fix
+* [feature] provider onboarding mid session, type in details, saves to user config file
+* [feature] fps command - display an fps counter in the top right corner
+* [feature] baseline context - files that should be automatically consumed when running prompts without the user having to specify
 * [feature] doctor command so that users can check which possible providers are setup and if something went wrong
 * [feature] should know what providers are setup so that we can offer as much mid session model switching as possible
 * [feature] enable other models and store configuration for it. Look for project based config first, ie ./.oc/config.json Then look for user based config ~/.oc/config.json
@@ -21,6 +24,8 @@
 * [feature] token budget per turn - let users cap how many tokens a single agentic loop can consume before pausing for confirmation, preventing runaway tool loops.
 * [feature] streaming markdown - render markdown progressively during streaming instead of after the full message is received.
 * [feature] custom commands
-* [feature] marketplaces (for updatable custom commands & groupings
+* [feature] marketplaces (for updatable custom commands & groupings, simple git repos where we can look at the commit hash to determine if they need to be updated
 * [feature] auto compact strategies
 * [feature] auto updater? 
+* [feature] telemetry to see which features are useful
+* [feature] change configs mid session, toggles, inputs, have it be accessed via a :command

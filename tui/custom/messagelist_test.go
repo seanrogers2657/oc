@@ -290,6 +290,48 @@ func spanText(rl renderedLine) string {
 	return sb.String()
 }
 
+func TestScrollInfoDefaults(t *testing.T) {
+	ml := NewMessageList(nil)
+	offset, autoScroll := ml.ScrollInfo()
+	if offset != 0 {
+		t.Errorf("expected offset 0, got %d", offset)
+	}
+	if !autoScroll {
+		t.Error("expected autoScroll true by default")
+	}
+}
+
+func TestScrollInfoAfterManualScroll(t *testing.T) {
+	ml := NewMessageList(nil)
+	// Simulate content taller than viewport
+	ml.scroll.ContentHeight = 100
+	ml.scroll.ViewportHeight = 20
+	ml.scroll.Offset = 0
+
+	// Scroll up disables auto-scroll
+	ml.ScrollUp(5)
+	offset, autoScroll := ml.ScrollInfo()
+	if autoScroll {
+		t.Error("expected autoScroll false after ScrollUp")
+	}
+	if offset != 0 {
+		// ScrollUp from 0 should clamp to 0
+		t.Errorf("expected offset 0, got %d", offset)
+	}
+
+	// Set offset to simulate content that has scrolled
+	ml.scroll.Offset = 50
+	ml.autoScroll = false
+
+	// ScrollDown to bottom re-enables auto-scroll
+	ml.scroll.Offset = ml.scroll.ContentHeight - ml.scroll.ViewportHeight
+	ml.ScrollDown(1)
+	_, autoScroll = ml.ScrollInfo()
+	if !autoScroll {
+		t.Error("expected autoScroll true after scrolling to bottom")
+	}
+}
+
 func TestExpandTabs(t *testing.T) {
 	tests := []struct {
 		input    string

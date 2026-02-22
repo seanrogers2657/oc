@@ -28,6 +28,11 @@ func NewMessageList(getMessages MessageListProvider) *MessageList {
 	}
 }
 
+// ScrollInfo returns the current scroll offset and whether auto-scroll is active.
+func (ml *MessageList) ScrollInfo() (offset int, autoScroll bool) {
+	return ml.scroll.Offset, ml.autoScroll
+}
+
 func (ml *MessageList) Focused() bool       { return false }
 func (ml *MessageList) SetFocused(f bool)   {}
 func (ml *MessageList) MinSize() (int, int) { return 20, 3 }
