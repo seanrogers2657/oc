@@ -50,10 +50,78 @@ func (ia *InputArea) Text() string {
 	return b.String()
 }
 
-// LineCount returns the number of lines of text (including wrapped question lines in prompt mode).
-// width is the available rendering width (used to calculate question wrapping).
+// visualLine maps a segment of a logical line to a visual (screen) row.
+type visualLine struct {
+	logicalLine int // index into ia.lines
+	startCol    int // start rune offset within the logical line
+	length      int // number of runes in this visual segment
+}
+
+// computeVisualLines splits each logical line into segments of availWidth runes.
+// Empty logical lines produce one visual line with length 0.
+func (ia *InputArea) computeVisualLines(availWidth int) []visualLine {
+	if availWidth <= 0 {
+		availWidth = 1
+	}
+	var vlines []visualLine
+	for i, line := range ia.lines {
+		if len(line) == 0 {
+			vlines = append(vlines, visualLine{logicalLine: i, startCol: 0, length: 0})
+			continue
+		}
+		for off := 0; off < len(line); off += availWidth {
+			end := off + availWidth
+			if end > len(line) {
+				end = len(line)
+			}
+			vlines = append(vlines, visualLine{logicalLine: i, startCol: off, length: end - off})
+		}
+	}
+	return vlines
+}
+
+// cursorVisualPos maps (ia.cursorY, ia.cursorX) to a visual row and column.
+func (ia *InputArea) cursorVisualPos(vlines []visualLine, availWidth int) (vRow, vCol int) {
+	if availWidth <= 0 {
+		availWidth = 1
+	}
+	for i, vl := range vlines {
+		if vl.logicalLine != ia.cursorY {
+			continue
+		}
+		// Cursor is in this logical line — check if it falls within this segment.
+		if ia.cursorX >= vl.startCol && ia.cursorX < vl.startCol+vl.length {
+			return i, ia.cursorX - vl.startCol
+		}
+		// Cursor is at end of segment (on the boundary):
+		// It belongs to this segment if it's at the end of the logical line,
+		// or if it equals startCol+length and this is the last segment of the line.
+		if ia.cursorX == vl.startCol+vl.length {
+			// Check if there's a next segment for the same logical line.
+			if i+1 < len(vlines) && vlines[i+1].logicalLine == ia.cursorY {
+				// Cursor belongs to the next segment (col 0).
+				continue
+			}
+			// Last segment of this logical line — cursor is at end.
+			return i, ia.cursorX - vl.startCol
+		}
+	}
+	// Fallback: last visual line.
+	if len(vlines) > 0 {
+		return len(vlines) - 1, 0
+	}
+	return 0, 0
+}
+
+// LineCount returns the number of visual lines of text (including wrapped question lines in prompt mode).
+// width is the available rendering width (used to calculate question and text wrapping).
 func (ia *InputArea) LineCount(width int) int {
-	n := len(ia.lines)
+	promptLen := utf8.RuneCountInString(ia.prompt)
+	availWidth := width - promptLen
+	if availWidth <= 0 {
+		availWidth = 1
+	}
+	n := len(ia.computeVisualLines(availWidth))
 	if ia.promptMode && ia.promptQuestion != "" {
 		n += ia.questionLineCount(width)
 	}
@@ -274,48 +342,50 @@ func (ia *InputArea) Render(buf *ScreenBuffer, bounds Rect) {
 		textAreaH = 1
 	}
 
-	// Ensure cursor is visible
-	if ia.cursorY < ia.scrollOff {
-		ia.scrollOff = ia.cursorY
-	}
-	if ia.cursorY >= ia.scrollOff+textAreaH {
-		ia.scrollOff = ia.cursorY - textAreaH + 1
-	}
-
 	promptLen := utf8.RuneCountInString(ia.prompt)
+	availWidth := bounds.Width - promptLen
+	if availWidth <= 0 {
+		availWidth = 1
+	}
 
-	// Draw text lines
-	for i := 0; i < textAreaH && i+ia.scrollOff < len(ia.lines); i++ {
-		lineIdx := i + ia.scrollOff
+	// Compute visual lines and cursor position
+	vlines := ia.computeVisualLines(availWidth)
+	cursorVRow, cursorVCol := ia.cursorVisualPos(vlines, availWidth)
+
+	// Ensure cursor is visible (scroll in visual rows)
+	if cursorVRow < ia.scrollOff {
+		ia.scrollOff = cursorVRow
+	}
+	if cursorVRow >= ia.scrollOff+textAreaH {
+		ia.scrollOff = cursorVRow - textAreaH + 1
+	}
+
+	// Draw visual lines
+	for i := 0; i < textAreaH && i+ia.scrollOff < len(vlines); i++ {
+		vl := vlines[i+ia.scrollOff]
 		y := bounds.Y + 1 + questionLines + i
 		x := bounds.X
 
-		// Draw prompt on first visible line
-		if lineIdx == 0 {
+		// Draw prompt on the very first visual line
+		if i+ia.scrollOff == 0 {
 			buf.WriteString(x, y, ia.prompt, promptStyle)
-			x += promptLen
-		} else {
-			// Indent continuation lines to align with prompt
-			x += promptLen
 		}
+		x += promptLen
 
-		// Draw text
-		line := ia.lines[lineIdx]
-		availWidth := bounds.X + bounds.Width - x
-		for j, r := range line {
-			if j >= availWidth {
-				break
-			}
-			if lineIdx == ia.cursorY && j == ia.cursorX && ia.focused {
+		// Draw text segment
+		line := ia.lines[vl.logicalLine]
+		for j := 0; j < vl.length; j++ {
+			r := line[vl.startCol+j]
+			if i+ia.scrollOff == cursorVRow && j == cursorVCol && ia.focused {
 				buf.Set(x+j, y, r, cursorStyle)
 			} else {
 				buf.Set(x+j, y, r, textStyle)
 			}
 		}
 
-		// Draw cursor at end of line
-		if lineIdx == ia.cursorY && ia.cursorX >= len(line) && ia.focused {
-			cx := x + len(line)
+		// Draw cursor at end of segment (when cursor is past the last char)
+		if i+ia.scrollOff == cursorVRow && cursorVCol >= vl.length && ia.focused {
+			cx := x + vl.length
 			if cx < bounds.X+bounds.Width {
 				buf.Set(cx, y, ' ', cursorStyle)
 			}

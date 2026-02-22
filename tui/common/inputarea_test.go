@@ -596,6 +596,81 @@ func TestInputAreaPromptModeEmptyQuestion(t *testing.T) {
 	}
 }
 
+func TestInputAreaLineCountWraps(t *testing.T) {
+	ia := newTestInputArea()
+	// Prompt is "> " (2 chars), so at width 12, availWidth = 10
+	// 25 chars should produce 3 visual lines (10+10+5)
+	sendRunes(ia, "abcdefghijklmnopqrstuvwxy")
+	if got := ia.LineCount(12); got != 3 {
+		t.Fatalf("LineCount(12) = %d, want 3", got)
+	}
+	// At width 30 (availWidth=28), fits on 1 line
+	if got := ia.LineCount(30); got != 1 {
+		t.Fatalf("LineCount(30) = %d, want 1", got)
+	}
+}
+
+func TestInputAreaLineCountWrapsMultiLine(t *testing.T) {
+	ia := newTestInputArea()
+	// 15 chars on line 1, then a newline, then 5 chars on line 2
+	// At width 12 (availWidth=10): line1 = 2 visual lines (10+5), line2 = 1 visual line => 3 total
+	sendRunes(ia, "abcdefghijklmno")
+	ia.Update(KeyEvent{Key: KeyEnter, Alt: true})
+	sendRunes(ia, "hello")
+	if got := ia.LineCount(12); got != 3 {
+		t.Fatalf("LineCount(12) = %d, want 3", got)
+	}
+}
+
+func TestInputAreaRenderWrapsText(t *testing.T) {
+	ia := newTestInputArea()
+	// Width 12, prompt "> " takes 2, availWidth = 10
+	// Type 15 chars => wraps to 2 visual lines
+	sendRunes(ia, "abcdefghijklmno")
+	buf := NewScreenBuffer(12, 6)
+	ia.Render(buf, Rect{X: 0, Y: 0, Width: 12, Height: 6})
+
+	// Row 0: border
+	if buf.Cells[0][0].Rune != '─' {
+		t.Fatalf("row 0 should be border, got %q", buf.Cells[0][0].Rune)
+	}
+	// Row 1: prompt + first 10 chars "abcdefghij"
+	if buf.Cells[1][0].Rune != '>' {
+		t.Fatalf("row 1 col 0 = %q, want '>'", buf.Cells[1][0].Rune)
+	}
+	if buf.Cells[1][2].Rune != 'a' {
+		t.Fatalf("row 1 col 2 = %q, want 'a'", buf.Cells[1][2].Rune)
+	}
+	if buf.Cells[1][11].Rune != 'j' {
+		t.Fatalf("row 1 col 11 = %q, want 'j'", buf.Cells[1][11].Rune)
+	}
+	// Row 2: continuation (indented by prompt width) "klmno"
+	if buf.Cells[2][2].Rune != 'k' {
+		t.Fatalf("row 2 col 2 = %q, want 'k'", buf.Cells[2][2].Rune)
+	}
+	if buf.Cells[2][6].Rune != 'o' {
+		t.Fatalf("row 2 col 6 = %q, want 'o'", buf.Cells[2][6].Rune)
+	}
+}
+
+func TestInputAreaCursorVisualPos(t *testing.T) {
+	ia := newTestInputArea()
+	// Width 12, prompt "> " = 2 chars, availWidth = 10
+	// Type 15 chars, cursor should be at visual row 1, col 5
+	sendRunes(ia, "abcdefghijklmno")
+
+	availWidth := 10
+	vlines := ia.computeVisualLines(availWidth)
+	vRow, vCol := ia.cursorVisualPos(vlines, availWidth)
+
+	if vRow != 1 {
+		t.Fatalf("cursorVRow = %d, want 1", vRow)
+	}
+	if vCol != 5 {
+		t.Fatalf("cursorVCol = %d, want 5", vCol)
+	}
+}
+
 func TestInputAreaHistoryMultiLineUpDown(t *testing.T) {
 	ia := newTestInputArea()
 	ia.onSubmit = func(string) {}

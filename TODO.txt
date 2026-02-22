@@ -1,5 +1,4 @@
 * [feature] render past the terminal screen so that users scrolling up and see previous messages?
-* [bug] prompts that are too big go off screen, they should be wrapped
 * [feature] doctor command so that users can check which possible providers are setup and if something went wrong
 * [feature] should know what providers are setup so that we can offer as much mid session model switching as possible
 * [feature] enable other models and store configuration for it. Look for project based config first, ie ./.oc/config.json Then look for user based config ~/.oc/config.json
