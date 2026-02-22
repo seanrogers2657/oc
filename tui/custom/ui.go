@@ -1,4 +1,4 @@
-package tui
+package custom
 
 import (
 	"context"
@@ -12,32 +12,36 @@ import (
 	"golang.org/x/term"
 
 	"github.com/srogers/oc/event"
+	"github.com/srogers/oc/tui/common"
 )
 
-// Deps holds the injected dependencies for the TUI.
+// Deps holds the injected dependencies for the UI.
 type Deps struct {
-	Source   EventSource         // subscribe to session events
-	OnInput  InputHandler        // called when user submits text
-	Status   StatusProvider      // returns current status info
-	Messages MessageListProvider // returns current messages
-	Commands *CommandRegistry    // registered commands for command palette
+	Source        EventSource            // subscribe to session events
+	OnInput       InputHandler           // called when user submits text
+	Status        StatusProvider         // returns current status info
+	Messages      MessageListProvider    // returns current messages
+	Commands      *common.CommandRegistry // registered commands for command palette
+	FetchModels   FetchModels            // fetches available models from provider
+	OnModelSelect OnModelSelect          // called when user picks a model
 }
 
-// TUI is the top-level terminal application.
-type TUI struct {
+// UI is the top-level terminal application.
+type UI struct {
 	width  int
 	height int
 
-	current *ScreenBuffer // what's on screen now
-	next    *ScreenBuffer // what we want on screen
+	current *common.ScreenBuffer // what's on screen now
+	next    *common.ScreenBuffer // what we want on screen
 
-	events chan Event
+	events chan common.Event
 	deps   Deps
 
 	statusBar   *StatusBar
 	messageList *MessageList
-	inputArea   *InputArea
-	cmdPalette  *CommandPalette
+	inputArea   *common.InputArea
+	cmdPalette  *common.CommandPalette
+	modelPicker *common.ModelPicker
 
 	layout Layout
 
@@ -45,24 +49,27 @@ type TUI struct {
 	promptResponse chan<- string // non-nil while awaiting a prompt answer
 }
 
-// New creates a new TUI with the given dependencies.
-func New(deps Deps) *TUI {
-	t := &TUI{
-		events: make(chan Event, 64),
+// New creates a new UI with the given dependencies.
+func New(deps Deps) *UI {
+	t := &UI{
+		events: make(chan common.Event, 64),
 		deps:   deps,
 
 		statusBar:   NewStatusBar(deps.Status),
 		messageList: NewMessageList(deps.Messages),
-		inputArea:   NewInputArea(),
+		inputArea:   common.NewInputArea(),
 	}
 	if deps.Commands != nil {
-		t.cmdPalette = NewCommandPalette(deps.Commands)
+		t.cmdPalette = common.NewCommandPalette(deps.Commands)
+	}
+	if deps.FetchModels != nil && deps.OnModelSelect != nil {
+		t.modelPicker = common.NewModelPicker(deps.FetchModels, deps.OnModelSelect)
 	}
 	return t
 }
 
-// Run starts the TUI event loop. Blocks until ctx is cancelled or Ctrl+C.
-func (t *TUI) Run(ctx context.Context) error {
+// Run starts the UI event loop. Blocks until ctx is cancelled or Ctrl+C.
+func (t *UI) Run(ctx context.Context) error {
 	// Get initial terminal size
 	fd := int(os.Stdin.Fd())
 	width, height, err := term.GetSize(fd)
@@ -82,18 +89,18 @@ func (t *TUI) Run(ctx context.Context) error {
 
 	// Setup terminal
 	w := os.Stdout
-	io.WriteString(w, AltScreenEnter+CursorHide+BracketedPasteEnable+ClearScreen)
-	defer io.WriteString(w, BracketedPasteDisable+CursorShow+AltScreenExit)
+	io.WriteString(w, common.AltScreenEnter+common.CursorHide+common.BracketedPasteEnable+common.ClearScreen)
+	defer io.WriteString(w, common.BracketedPasteDisable+common.CursorShow+common.AltScreenExit)
 
 	// Initialize buffers
-	t.current = NewScreenBuffer(t.width, t.height)
-	t.next = NewScreenBuffer(t.width, t.height)
+	t.current = common.NewScreenBuffer(t.width, t.height)
+	t.next = common.NewScreenBuffer(t.width, t.height)
 
 	// Focus the input area
 	t.inputArea.SetFocused(true)
 
 	// Start input reader
-	go ReadInput(os.Stdin, t.events)
+	go common.ReadInput(os.Stdin, t.events)
 
 	// Start resize watcher
 	go t.watchResize()
@@ -107,11 +114,11 @@ func (t *TUI) Run(ctx context.Context) error {
 	}
 
 	// Wire input submission
-	t.inputArea.onSubmit = func(text string) {
+	t.inputArea.SetOnSubmit(func(text string) {
 		if t.deps.OnInput != nil {
 			t.deps.OnInput(text)
 		}
-	}
+	})
 
 	// Initial render
 	t.computeLayout()
@@ -137,14 +144,25 @@ func (t *TUI) Run(ctx context.Context) error {
 	}
 }
 
-// handleEvent processes one event. Returns true if the TUI should exit.
-func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
+// handleEvent processes one event. Returns true if the UI should exit.
+func (t *UI) handleEvent(ev common.Event, cancel context.CancelFunc) bool {
 	switch e := ev.(type) {
-	case KeyEvent:
+	case common.KeyEvent:
 		// Global keybindings
 		if e.Ctrl && e.Rune == 'c' {
 			cancel()
 			return true
+		}
+
+		// Model picker intercept - when active, it gets ALL keys
+		if t.modelPicker != nil && t.modelPicker.Active() {
+			dirty, consumed := t.modelPicker.Update(e)
+			if consumed {
+				if dirty {
+					t.render()
+				}
+				return false
+			}
 		}
 
 		// Command palette intercept - when active, it gets ALL keys
@@ -159,7 +177,7 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 		}
 
 		// Trigger command palette: ':' when input is empty and not in prompt mode
-		if t.cmdPalette != nil && e.Key == KeyRune && e.Rune == ':' && !t.inputArea.promptMode {
+		if t.cmdPalette != nil && e.Key == common.KeyRune && e.Rune == ':' && !t.inputArea.InPromptMode() {
 			if strings.TrimSpace(t.inputArea.Text()) == "" {
 				t.cmdPalette.Open()
 				t.render()
@@ -189,35 +207,35 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 			t.render()
 		}
 
-	case ResizeEvent:
+	case common.ResizeEvent:
 		t.width = e.Width
 		t.height = e.Height
-		t.current = NewScreenBuffer(t.width, t.height)
-		t.next = NewScreenBuffer(t.width, t.height)
+		t.current = common.NewScreenBuffer(t.width, t.height)
+		t.next = common.NewScreenBuffer(t.width, t.height)
 		// Clear terminal so stale content from old size is wiped
-		io.WriteString(os.Stdout, ClearScreen)
+		io.WriteString(os.Stdout, common.ClearScreen)
 		t.computeLayout()
 		t.fullRender()
 
-	case CustomEvent:
+	case common.CustomEvent:
 		// Handle prompt events
-		if ce, ok := ev.(CustomEvent); ok && ce.Topic == event.TopicToolPrompt {
+		if ce, ok := ev.(common.CustomEvent); ok && ce.Topic == string(event.TopicToolPrompt) {
 			if req, ok := ce.Data.(event.PromptRequest); ok {
 				t.promptResponse = req.Response
 				t.inputArea.SetPromptMode(true, req.Question)
-				t.inputArea.onSubmit = func(text string) {
+				t.inputArea.SetOnSubmit(func(text string) {
 					if t.promptResponse != nil {
 						t.promptResponse <- text
 						t.promptResponse = nil
 					}
 					t.inputArea.SetPromptMode(false, "")
-					t.inputArea.onSubmit = func(text string) {
+					t.inputArea.SetOnSubmit(func(text string) {
 						if t.deps.OnInput != nil {
 							t.deps.OnInput(text)
 						}
-					}
+					})
 					t.computeLayout()
-				}
+				})
 				t.computeLayout()
 				t.render()
 				break
@@ -230,7 +248,7 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 			t.render()
 		}
 
-	case TickEvent:
+	case common.TickEvent:
 		dirty := t.statusBar.Update(ev)
 		dirty = t.messageList.Update(ev) || dirty
 		dirty = t.inputArea.Update(ev) || dirty
@@ -243,12 +261,12 @@ func (t *TUI) handleEvent(ev Event, cancel context.CancelFunc) bool {
 }
 
 // computeLayout recalculates panel bounds.
-func (t *TUI) computeLayout() {
+func (t *UI) computeLayout() {
 	t.layout = ComputeLayout(t.width, t.height, t.inputArea.LineCount(t.width))
 }
 
 // render draws all components to the next buffer and flushes the diff.
-func (t *TUI) render() {
+func (t *UI) render() {
 	t.next.Clear()
 
 	t.statusBar.Render(t.next, t.layout.StatusBar)
@@ -257,6 +275,9 @@ func (t *TUI) render() {
 
 	if t.cmdPalette != nil && t.cmdPalette.Active() {
 		t.cmdPalette.Render(t.next, t.width, t.height)
+	}
+	if t.modelPicker != nil && t.modelPicker.Active() {
+		t.modelPicker.Render(t.next, t.width, t.height)
 	}
 
 	// Compute diff and write to stdout
@@ -270,8 +291,7 @@ func (t *TUI) render() {
 }
 
 // fullRender draws all components and writes every cell (no diff).
-// Used after resize or screen clear when the terminal state is unknown.
-func (t *TUI) fullRender() {
+func (t *UI) fullRender() {
 	t.next.Clear()
 
 	t.statusBar.Render(t.next, t.layout.StatusBar)
@@ -281,6 +301,9 @@ func (t *TUI) fullRender() {
 	if t.cmdPalette != nil && t.cmdPalette.Active() {
 		t.cmdPalette.Render(t.next, t.width, t.height)
 	}
+	if t.modelPicker != nil && t.modelPicker.Active() {
+		t.modelPicker.Render(t.next, t.width, t.height)
+	}
 
 	io.WriteString(os.Stdout, t.next.FullRender())
 
@@ -288,22 +311,30 @@ func (t *TUI) fullRender() {
 	t.current, t.next = t.next, t.current
 }
 
+// OpenModelPicker opens the model picker overlay with the current model highlighted.
+func (t *UI) OpenModelPicker() {
+	if t.modelPicker != nil {
+		status := t.deps.Status()
+		t.modelPicker.Open(status.Model)
+		t.render()
+	}
+}
 
 // watchResize listens for SIGWINCH and sends ResizeEvents.
-func (t *TUI) watchResize() {
+func (t *UI) watchResize() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
 	for range ch {
 		fd := int(os.Stdin.Fd())
 		w, h, err := term.GetSize(fd)
 		if err == nil {
-			t.events <- ResizeEvent{Width: w, Height: h}
+			t.events <- common.ResizeEvent{Width: w, Height: h}
 		}
 	}
 }
 
 // tickLoop sends periodic TickEvents for animations.
-func (t *TUI) tickLoop(ctx context.Context) {
+func (t *UI) tickLoop(ctx context.Context) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -312,15 +343,15 @@ func (t *TUI) tickLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			select {
-			case t.events <- TickEvent{}:
+			case t.events <- common.TickEvent{}:
 			default: // drop tick if channel full
 			}
 		}
 	}
 }
 
-// subscribeBusEvents forwards event bus payloads into the TUI event channel.
-func (t *TUI) subscribeBusEvents() {
+// subscribeBusEvents forwards event bus payloads into the UI event channel.
+func (t *UI) subscribeBusEvents() {
 	topics := []event.Topic{
 		event.TopicPartDelta,
 		event.TopicPartDone,
@@ -335,7 +366,7 @@ func (t *TUI) subscribeBusEvents() {
 		topic := topic
 		t.deps.Source.Subscribe(topic, func(p event.Payload) {
 			select {
-			case t.events <- CustomEvent{Topic: topic, Data: p.Data}:
+			case t.events <- common.CustomEvent{Topic: string(topic), Data: p.Data}:
 			default: // drop if full
 			}
 		})

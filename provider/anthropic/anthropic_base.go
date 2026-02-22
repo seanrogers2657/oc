@@ -7,9 +7,55 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 
 	"github.com/srogers/oc/provider"
 )
+
+// ListModels fetches available models from the Anthropic /v1/models endpoint.
+func ListModels(
+	ctx context.Context,
+	client http.Client,
+	auth provider.Authenticator,
+	baseUrl string,
+) ([]string, error) {
+	url := baseUrl + "/v1/models"
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("anthropic-version", "2023-06-01")
+	if err := auth.Authenticate(req); err != nil {
+		return nil, fmt.Errorf("authenticate: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	models := make([]string, len(result.Data))
+	for i, m := range result.Data {
+		models[i] = m.ID
+	}
+	sort.Strings(models)
+	return models, nil
+}
 
 // Stream sends a messages request and returns streaming events.
 func Stream(

@@ -20,6 +20,11 @@ type Provider interface {
 	) (<-chan StreamEvent, error)
 }
 
+// ModelLister is an optional interface for providers that can list available models.
+type ModelLister interface {
+	ListModels(ctx context.Context) ([]string, error)
+}
+
 // Authenticator applies authentication credentials to an HTTP request.
 type Authenticator interface {
 	Authenticate(req *http.Request) error

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/srogers/oc/provider"
@@ -43,6 +44,55 @@ func NewOpenAI(name, apiKey, baseURL string, client ...*http.Client) *OpenAIProv
 }
 
 func (p *OpenAIProvider) Name() string { return p.name }
+
+// ListModels fetches available models from the OpenAI-compatible /v1/models endpoint.
+func (p *OpenAIProvider) ListModels(ctx context.Context) ([]string, error) {
+	url := p.buildModelsURL()
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	models := make([]string, len(result.Data))
+	for i, m := range result.Data {
+		models[i] = m.ID
+	}
+	sort.Strings(models)
+	return models, nil
+}
+
+// buildModelsURL returns the models list endpoint, avoiding double /v1 paths.
+func (p *OpenAIProvider) buildModelsURL() string {
+	base := p.baseURL
+	if strings.HasSuffix(base, "/v1") || strings.HasSuffix(base, "/v1/") {
+		base = strings.TrimRight(base, "/")
+		return base + "/models"
+	}
+	return base + "/v1/models"
+}
 
 // buildURL returns the chat completions endpoint, avoiding double /v1 paths.
 func (p *OpenAIProvider) buildURL() string {

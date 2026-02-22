@@ -1,4 +1,4 @@
-package tui
+package custom
 
 import (
 	"strings"
@@ -9,15 +9,13 @@ import (
 	"github.com/srogers/oc/provider"
 	"github.com/srogers/oc/session"
 	"github.com/srogers/oc/tool/diff"
+	"github.com/srogers/oc/tui/common"
 )
-
-// MessageListProvider gives the message list access to session state.
-type MessageListProvider func() []session.Message
 
 // MessageList is a scrollable chat history component.
 type MessageList struct {
 	getMessages MessageListProvider
-	scroll      ScrollState
+	scroll      common.ScrollState
 	autoScroll  bool // auto-scroll to bottom on new content
 	dirty       bool // needs re-render
 }
@@ -30,8 +28,8 @@ func NewMessageList(getMessages MessageListProvider) *MessageList {
 	}
 }
 
-func (ml *MessageList) Focused() bool     { return false }
-func (ml *MessageList) SetFocused(f bool) {}
+func (ml *MessageList) Focused() bool       { return false }
+func (ml *MessageList) SetFocused(f bool)   {}
 func (ml *MessageList) MinSize() (int, int) { return 20, 3 }
 
 // ScrollUp scrolls the message list up by n lines.
@@ -49,16 +47,16 @@ func (ml *MessageList) ScrollDown(n int) {
 }
 
 // Update handles events. Returns true if redraw needed.
-func (ml *MessageList) Update(ev Event) bool {
+func (ml *MessageList) Update(ev common.Event) bool {
 	switch e := ev.(type) {
-	case KeyEvent:
+	case common.KeyEvent:
 		// Scroll with PgUp/PgDown
 		switch e.Key {
-		case KeyPgUp:
+		case common.KeyPgUp:
 			ml.scroll.ScrollUp(ml.scroll.ViewportHeight / 2)
 			ml.autoScroll = false
 			return true
-		case KeyPgDown:
+		case common.KeyPgDown:
 			ml.scroll.ScrollDown(ml.scroll.ViewportHeight / 2)
 			if ml.scroll.AtBottom() {
 				ml.autoScroll = true
@@ -66,14 +64,14 @@ func (ml *MessageList) Update(ev Event) bool {
 			return true
 		}
 
-	case CustomEvent:
+	case common.CustomEvent:
 		switch e.Topic {
-		case event.TopicPartDelta, event.TopicMsgDone, event.TopicToolStart, event.TopicToolDone, event.TopicError:
+		case string(event.TopicPartDelta), string(event.TopicMsgDone), string(event.TopicToolStart), string(event.TopicToolDone), string(event.TopicError):
 			ml.dirty = true
 			return true
 		}
 
-	case TickEvent:
+	case common.TickEvent:
 		// Refresh during streaming
 		if ml.dirty {
 			ml.dirty = false
@@ -85,7 +83,7 @@ func (ml *MessageList) Update(ev Event) bool {
 }
 
 // Render draws the message list into the buffer.
-func (ml *MessageList) Render(buf *ScreenBuffer, bounds Rect) {
+func (ml *MessageList) Render(buf *common.ScreenBuffer, bounds common.Rect) {
 	if bounds.Width < 1 || bounds.Height < 1 || ml.getMessages == nil {
 		return
 	}
@@ -133,7 +131,7 @@ type renderedLine struct {
 
 type styledSpan struct {
 	text  string
-	style Style
+	style common.Style
 }
 
 // renderMessage converts a session.Message into renderedLines.
@@ -174,11 +172,11 @@ func (ml *MessageList) renderMessage(msg session.Message, maxWidth int) []render
 			if p.Text == "" {
 				continue
 			}
-			thinkStyle := Style{FG: NewColor(120, 120, 120), Italic: true}
+			thinkStyle := common.Style{FG: common.NewColor(120, 120, 120), Italic: true}
 			lines = append(lines, renderedLine{spans: []styledSpan{
-				{text: "thinking: ", style: Style{FG: NewColor(100, 100, 100), Italic: true, Bold: true}},
+				{text: "thinking: ", style: common.Style{FG: common.NewColor(100, 100, 100), Italic: true, Bold: true}},
 			}})
-			wrapped := wrapText(p.Text, contentWidth)
+			wrapped := common.WrapText(p.Text, contentWidth)
 			for _, wl := range wrapped {
 				lines = append(lines, renderedLine{spans: []styledSpan{
 					{text: wl, style: thinkStyle},
@@ -195,9 +193,9 @@ func (ml *MessageList) renderMessage(msg session.Message, maxWidth int) []render
 
 	// Render error as agent-style content
 	if msg.Error != nil {
-		errStyle := Style{FG: NewColor(255, 80, 80)}
-		errLabel := Style{FG: NewColor(255, 80, 80), Bold: true}
-		wrapped := wrapText(msg.Error.Error(), contentWidth-len("Error: "))
+		errStyle := common.Style{FG: common.NewColor(255, 80, 80)}
+		errLabel := common.Style{FG: common.NewColor(255, 80, 80), Bold: true}
+		wrapped := common.WrapText(msg.Error.Error(), contentWidth-len("Error: "))
 		for i, wl := range wrapped {
 			if i == 0 {
 				lines = append(lines, renderedLine{spans: []styledSpan{
@@ -214,12 +212,12 @@ func (ml *MessageList) renderMessage(msg session.Message, maxWidth int) []render
 
 	// Apply prefix/indent to all content lines
 	if isUser {
-		userStyle := Style{FG: NewColor(180, 180, 180)}
+		userStyle := common.Style{FG: common.NewColor(180, 180, 180)}
 		for i, line := range lines {
 			prefixed := []styledSpan{{text: userPrefix, style: userStyle}}
 			// Apply light gray to all spans
 			for _, s := range line.spans {
-				s.style.FG = NewColor(180, 180, 180)
+				s.style.FG = common.NewColor(180, 180, 180)
 				prefixed = append(prefixed, s)
 			}
 			lines[i] = renderedLine{spans: prefixed}
@@ -229,7 +227,7 @@ func (ml *MessageList) renderMessage(msg session.Message, maxWidth int) []render
 			if len(line.spans) == 0 {
 				continue
 			}
-			indented := []styledSpan{{text: assistantIndent, style: Style{}}}
+			indented := []styledSpan{{text: assistantIndent, style: common.Style{}}}
 			indented = append(indented, line.spans...)
 			lines[i] = renderedLine{spans: indented}
 		}
@@ -239,10 +237,6 @@ func (ml *MessageList) renderMessage(msg session.Message, maxWidth int) []render
 }
 
 // mdLineToRendered converts a markdown.Line to renderedLines, wrapping if needed.
-// Single-pass algorithm: walks spans left-to-right, building rows directly.
-// Wraps at word boundaries (spaces, hyphens) when possible, falls back to
-// character-level breaks for words longer than the available width.
-// Continuation lines preserve the line's Indent.
 func mdLineToRendered(line markdown.Line, maxWidth int) []renderedLine {
 	if len(line.Spans) == 0 {
 		return []renderedLine{{}}
@@ -257,7 +251,7 @@ func mdLineToRendered(line markdown.Line, maxWidth int) []renderedLine {
 	}
 
 	makeIndentSpan := func() styledSpan {
-		return styledSpan{text: strings.Repeat(" ", indent), style: Style{}}
+		return styledSpan{text: strings.Repeat(" ", indent), style: common.Style{}}
 	}
 
 	var result []renderedLine
@@ -346,23 +340,23 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 
 	// Status + tool name
 	var statusIcon string
-	var statusStyle Style
+	var statusStyle common.Style
 	switch tc.Status {
 	case session.ToolPending:
 		statusIcon = "○"
-		statusStyle = Style{FG: NewColor(120, 120, 120)}
+		statusStyle = common.Style{FG: common.NewColor(120, 120, 120)}
 	case session.ToolRunning:
 		statusIcon = "◌"
-		statusStyle = Style{FG: NewColor(255, 200, 50)}
+		statusStyle = common.Style{FG: common.NewColor(255, 200, 50)}
 	case session.ToolCompleted:
 		statusIcon = "●"
-		statusStyle = Style{FG: NewColor(100, 200, 100)}
+		statusStyle = common.Style{FG: common.NewColor(100, 200, 100)}
 	case session.ToolError:
 		statusIcon = "✗"
-		statusStyle = Style{FG: NewColor(255, 80, 80)}
+		statusStyle = common.Style{FG: common.NewColor(255, 80, 80)}
 	}
 
-	toolStyle := Style{FG: NewColor(180, 140, 255), Bold: true}
+	toolStyle := common.Style{FG: common.NewColor(180, 140, 255), Bold: true}
 	label := tc.Tool
 	if tc.Title != "" {
 		label = tc.Title
@@ -375,7 +369,7 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 	if !tc.End.IsZero() && !tc.Start.IsZero() {
 		dur := tc.End.Sub(tc.Start)
 		durStr := " (" + dur.Round(1e6).String() + ")"
-		headerSpans = append(headerSpans, styledSpan{text: durStr, style: Style{FG: NewColor(100, 100, 100)}})
+		headerSpans = append(headerSpans, styledSpan{text: durStr, style: common.Style{FG: common.NewColor(100, 100, 100)}})
 	}
 	lines = append(lines, renderedLine{spans: headerSpans})
 
@@ -387,16 +381,15 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 			if i >= maxDiffLines {
 				remaining := len(diffLines) - maxDiffLines
 				lines = append(lines, renderedLine{spans: []styledSpan{
-					{text: "  ...", style: Style{FG: NewColor(100, 100, 100)}},
-					{text: " (" + itoa(remaining) + " more lines)", style: Style{FG: NewColor(100, 100, 100)}},
+					{text: "  ...", style: common.Style{FG: common.NewColor(100, 100, 100)}},
+					{text: " (" + itoa(remaining) + " more lines)", style: common.Style{FG: common.NewColor(100, 100, 100)}},
 				}})
 				break
 			}
-			
+
 			// Convert diff styling to TUI styling.
-			// Prefix (+/-/ ) gets foreground color only; content gets background color.
 			contentStyle := diffLineToStyle(dl)
-			prefixStyle := Style{FG: contentStyle.FG}
+			prefixStyle := common.Style{FG: contentStyle.FG}
 			var spans []styledSpan
 			spans = append(spans, styledSpan{text: "  " + dl.Prefix, style: prefixStyle})
 			spans = append(spans, styledSpan{text: dl.Text, style: contentStyle})
@@ -404,15 +397,15 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 		}
 	} else if tc.Output != "" {
 		// Fall back to showing regular output if no diff available
-		outputStyle := Style{FG: NewColor(160, 160, 160)}
-		outputLines := wrapText(tc.Output, maxWidth-2)
+		outputStyle := common.Style{FG: common.NewColor(160, 160, 160)}
+		outputLines := common.WrapText(tc.Output, maxWidth-2)
 		const maxOutputLines = 10
 		for i, ol := range outputLines {
 			if i >= maxOutputLines {
 				remaining := len(outputLines) - maxOutputLines
 				lines = append(lines, renderedLine{spans: []styledSpan{
-					{text: "  ...", style: Style{FG: NewColor(100, 100, 100)}},
-					{text: " (" + itoa(remaining) + " more lines)", style: Style{FG: NewColor(100, 100, 100)}},
+					{text: "  ...", style: common.Style{FG: common.NewColor(100, 100, 100)}},
+					{text: " (" + itoa(remaining) + " more lines)", style: common.Style{FG: common.NewColor(100, 100, 100)}},
 				}})
 				break
 			}
@@ -424,78 +417,12 @@ func renderToolCallLines(tc session.ToolCallPart, maxWidth int) []renderedLine {
 
 	// Error
 	if tc.Error != "" {
-		errStyle := Style{FG: NewColor(255, 80, 80)}
+		errStyle := common.Style{FG: common.NewColor(255, 80, 80)}
 		lines = append(lines, renderedLine{spans: []styledSpan{
 			{text: "  Error: " + tc.Error, style: errStyle},
 		}})
 	}
 
-	return lines
-}
-
-// wrapText splits text into lines of at most maxWidth display columns.
-// Tab characters are expanded to spaces (4-column tab stops) so they
-// occupy the correct number of display columns.
-func wrapText(text string, maxWidth int) []string {
-	if maxWidth <= 0 {
-		maxWidth = 80
-	}
-
-	var result []string
-	for _, line := range splitLines(text) {
-		line = expandTabs(line, 4)
-		runes := []rune(line)
-		if len(runes) <= maxWidth {
-			result = append(result, line)
-		} else {
-			for len(runes) > maxWidth {
-				result = append(result, string(runes[:maxWidth]))
-				runes = runes[maxWidth:]
-			}
-			if len(runes) > 0 {
-				result = append(result, string(runes))
-			}
-		}
-	}
-	return result
-}
-
-// expandTabs replaces tab characters with spaces aligned to tabWidth-column stops.
-func expandTabs(s string, tabWidth int) string {
-	if !strings.Contains(s, "\t") {
-		return s
-	}
-	var b strings.Builder
-	col := 0
-	for _, r := range s {
-		if r == '\t' {
-			spaces := tabWidth - (col % tabWidth)
-			for i := 0; i < spaces; i++ {
-				b.WriteByte(' ')
-			}
-			col += spaces
-		} else {
-			b.WriteRune(r)
-			col++
-		}
-	}
-	return b.String()
-}
-
-// splitLines splits on \n, like strings.Split but handles empty.
-func splitLines(s string) []string {
-	if s == "" {
-		return nil
-	}
-	lines := make([]string, 0)
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	lines = append(lines, s[start:])
 	return lines
 }
 
@@ -555,32 +482,64 @@ func itoa(n int) string {
 	return string(digits)
 }
 
+// mdStyle maps a markdown SpanKind to a TUI Style.
+func mdStyle(kind markdown.SpanKind) common.Style {
+	switch kind {
+	case markdown.KindBold:
+		return common.Style{FG: common.NewColor(220, 220, 220), Bold: true}
+	case markdown.KindItalic:
+		return common.Style{FG: common.NewColor(200, 200, 200), Italic: true}
+	case markdown.KindBoldItalic:
+		return common.Style{FG: common.NewColor(220, 220, 220), Bold: true, Italic: true}
+	case markdown.KindCode:
+		return common.Style{FG: common.NewColor(230, 180, 80), BG: common.NewColor(40, 40, 40)}
+	case markdown.KindCodeBlock:
+		return common.Style{FG: common.NewColor(200, 200, 200), BG: common.NewColor(30, 30, 30)}
+	case markdown.KindCodeLang:
+		return common.Style{FG: common.NewColor(120, 120, 120), BG: common.NewColor(30, 30, 30), Italic: true}
+	case markdown.KindHeader:
+		return common.Style{FG: common.NewColor(140, 170, 255), Bold: true}
+	case markdown.KindLink:
+		return common.Style{FG: common.NewColor(100, 180, 255), Underline: true}
+	case markdown.KindLinkURL:
+		return common.Style{FG: common.NewColor(100, 100, 100)}
+	case markdown.KindBlockquote:
+		return common.Style{FG: common.NewColor(160, 160, 160), Italic: true}
+	case markdown.KindListBullet:
+		return common.Style{FG: common.NewColor(100, 200, 100)}
+	case markdown.KindHRule:
+		return common.Style{FG: common.NewColor(80, 80, 80)}
+	default:
+		return common.Style{FG: common.NewColor(220, 220, 220)}
+	}
+}
+
 // diffLineToStyle converts a diff.StyledLine to a TUI Style
-func diffLineToStyle(dl diff.StyledLine) Style {
-	style := Style{}
-	
+func diffLineToStyle(dl diff.StyledLine) common.Style {
+	style := common.Style{}
+
 	// Set foreground color
 	switch dl.Foreground {
 	case "white":
-		style.FG = NewColor(255, 255, 255)
+		style.FG = common.NewColor(255, 255, 255)
 	case "bright_black":
-		style.FG = NewColor(120, 120, 120)
+		style.FG = common.NewColor(120, 120, 120)
 	default:
-		style.FG = NewColor(160, 160, 160) // default gray
+		style.FG = common.NewColor(160, 160, 160) // default gray
 	}
-	
+
 	// Set background color
 	switch dl.Background {
 	case "dark_green":
-		style.BG = NewColor(0, 80, 0)    // Dark green background
+		style.BG = common.NewColor(0, 80, 0)
 	case "dark_red":
-		style.BG = NewColor(120, 0, 0)   // Dark red background
+		style.BG = common.NewColor(120, 0, 0)
 	}
-	
+
 	// Set bold if needed
 	if dl.Bold {
 		style.Bold = true
 	}
-	
+
 	return style
 }

@@ -1,4 +1,4 @@
-package tui
+package custom
 
 import (
 	"strings"
@@ -6,24 +6,25 @@ import (
 	"unicode/utf8"
 
 	"github.com/srogers/oc/markdown"
+	"github.com/srogers/oc/tui/common"
 )
 
 func TestWrapTextASCII(t *testing.T) {
-	lines := wrapText("hello world", 80)
+	lines := common.WrapText("hello world", 80)
 	if len(lines) != 1 || lines[0] != "hello world" {
 		t.Fatalf("expected single line 'hello world', got %v", lines)
 	}
 }
 
 func TestWrapTextExactWidth(t *testing.T) {
-	lines := wrapText("abcde", 5)
+	lines := common.WrapText("abcde", 5)
 	if len(lines) != 1 || lines[0] != "abcde" {
 		t.Fatalf("expected single line 'abcde', got %v", lines)
 	}
 }
 
 func TestWrapTextOverflow(t *testing.T) {
-	lines := wrapText("abcdefgh", 5)
+	lines := common.WrapText("abcdefgh", 5)
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
 	}
@@ -42,7 +43,7 @@ func TestWrapTextMultiByte(t *testing.T) {
 		t.Fatalf("expected 5 runes, got %d", utf8.RuneCountInString(text))
 	}
 
-	lines := wrapText(text, 5)
+	lines := common.WrapText(text, 5)
 	if len(lines) != 1 {
 		t.Fatalf("5 runes at width 5 should be 1 line, got %d: %v", len(lines), lines)
 	}
@@ -54,7 +55,7 @@ func TestWrapTextMultiByte(t *testing.T) {
 func TestWrapTextMultiByteWrap(t *testing.T) {
 	// 8 em-dashes at width 5 should wrap to 2 lines (5 + 3)
 	text := "————————"
-	lines := wrapText(text, 5)
+	lines := common.WrapText(text, 5)
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
 	}
@@ -69,7 +70,7 @@ func TestWrapTextMultiByteWrap(t *testing.T) {
 func TestWrapTextNoCorruptedRunes(t *testing.T) {
 	// Wrapping multi-byte text must not produce invalid UTF-8
 	text := "café résumé naïve"
-	lines := wrapText(text, 6)
+	lines := common.WrapText(text, 6)
 	for i, line := range lines {
 		if !utf8.ValidString(line) {
 			t.Errorf("line %d is invalid UTF-8: %q", i, line)
@@ -211,7 +212,6 @@ func TestMdLineToRenderedIndentPreservation(t *testing.T) {
 		Spans:  []markdown.Span{{Text: "hello world foo bar", Kind: markdown.KindNormal}},
 	}
 	// Width 16: indent(4) + 12 content chars per line
-	// "hello world" = 11 runes, fits; "foo bar" = 7, doesn't fit with "hello world " on same line
 	result := mdLineToRendered(line, 16)
 	if len(result) < 2 {
 		t.Fatalf("expected at least 2 lines, got %d", len(result))
@@ -306,9 +306,9 @@ func TestExpandTabs(t *testing.T) {
 		{"    1\tline", 4, "    1   line"}, // mimics read.go format
 	}
 	for _, tt := range tests {
-		got := expandTabs(tt.input, tt.tabWidth)
+		got := common.ExpandTabs(tt.input, tt.tabWidth)
 		if got != tt.want {
-			t.Errorf("expandTabs(%q, %d) = %q, want %q", tt.input, tt.tabWidth, got, tt.want)
+			t.Errorf("ExpandTabs(%q, %d) = %q, want %q", tt.input, tt.tabWidth, got, tt.want)
 		}
 	}
 }
@@ -316,12 +316,12 @@ func TestExpandTabs(t *testing.T) {
 func TestWrapTextWithTabs(t *testing.T) {
 	// Tab at column 0 expands to 4 spaces; total = 4 + 5 = 9 runes
 	text := "\thello"
-	lines := wrapText(text, 10)
+	lines := common.WrapText(text, 10)
 	if len(lines) != 1 {
 		t.Fatalf("expected 1 line, got %d: %v", len(lines), lines)
 	}
 	if strings.Contains(lines[0], "\t") {
-		t.Error("wrapText should expand tabs; output still contains \\t")
+		t.Error("WrapText should expand tabs; output still contains \\t")
 	}
 	if lines[0] != "    hello" {
 		t.Errorf("expected '    hello', got %q", lines[0])
@@ -329,12 +329,8 @@ func TestWrapTextWithTabs(t *testing.T) {
 }
 
 func TestWrapTextTabNotSplitMidExpansion(t *testing.T) {
-	// "12345678\tX" → tab at col 8 expands to 4 spaces → "12345678    X" (13 runes)
-	// At width 10, wraps to: "1234567812" + "  X" — no, wait.
-	// expandTabs runs first: "12345678" + 4 spaces + "X" = "12345678    X"
-	// Then []rune has 13 runes. Wrapping at 10: "12345678  " + "  X"
 	text := "12345678\tX"
-	lines := wrapText(text, 10)
+	lines := common.WrapText(text, 10)
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
 	}

@@ -1,4 +1,4 @@
-package tui
+package common
 
 // Component is a drawable, updatable UI element.
 type Component interface {

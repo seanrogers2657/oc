@@ -1,10 +1,12 @@
-package tui
+package custom
+
+import "github.com/srogers/oc/tui/common"
 
 // Layout holds the computed bounds for the three panels.
 type Layout struct {
-	StatusBar   Rect
-	MessageList Rect
-	InputArea   Rect
+	StatusBar   common.Rect
+	MessageList common.Rect
+	InputArea   common.Rect
 }
 
 // ComputeLayout computes the 3-panel layout for the given terminal dimensions.
@@ -43,15 +45,15 @@ func ComputeLayout(width, height, inputLines int) Layout {
 	}
 
 	return Layout{
-		MessageList: Rect{
+		MessageList: common.Rect{
 			X: 0, Y: 0,
 			Width: width, Height: messageListH,
 		},
-		StatusBar: Rect{
+		StatusBar: common.Rect{
 			X: 0, Y: messageListH,
 			Width: width, Height: statusBarH,
 		},
-		InputArea: Rect{
+		InputArea: common.Rect{
 			X: 0, Y: messageListH + statusBarH,
 			Width: width, Height: inputAreaH,
 		},

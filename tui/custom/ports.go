@@ -1,6 +1,9 @@
-package tui
+package custom
 
-import "github.com/srogers/oc/event"
+import (
+	"github.com/srogers/oc/event"
+	"github.com/srogers/oc/session"
+)
 
 // InputHandler is called when the user submits text from the input area.
 type InputHandler func(text string)
@@ -28,5 +31,14 @@ type StatusInfo struct {
 // Satisfied by: a closure from app/ that reads session state.
 type StatusProvider func() StatusInfo
 
-// MessageListProvider is defined in messagelist.go -- re-exported here for docs.
+// FetchModels returns available model IDs from the provider.
+// Satisfied by: a closure from cmd/oc/ that calls provider.ModelLister.ListModels.
+type FetchModels func() ([]string, error)
+
+// OnModelSelect is called when the user picks a model from the picker.
+// Satisfied by: a closure from cmd/oc/ that calls session.SetModel.
+type OnModelSelect func(model string)
+
+// MessageListProvider gives the message list access to session state.
 // Satisfied by: a closure from app/ that reads session.GetMessages().
+type MessageListProvider func() []session.Message

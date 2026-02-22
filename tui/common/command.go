@@ -1,4 +1,4 @@
-package tui
+package common
 
 // Command represents an executable action in the command palette.
 type Command struct {

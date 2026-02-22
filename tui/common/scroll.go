@@ -1,4 +1,4 @@
-package tui
+package common
 
 // ScrollState tracks viewport position within scrollable content.
 type ScrollState struct {

@@ -41,3 +41,7 @@ func (p *anthropicApiProvider) Stream(
 func (p *anthropicApiProvider) Name() string {
 	return "anthropic-api"
 }
+
+func (p *anthropicApiProvider) ListModels(ctx context.Context) ([]string, error) {
+	return ListModels(ctx, *p.client, p.auth, p.baseUrl)
+}

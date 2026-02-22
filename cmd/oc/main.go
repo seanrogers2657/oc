@@ -20,7 +20,8 @@ import (
 	"github.com/srogers/oc/provider/openai"
 	"github.com/srogers/oc/session"
 	"github.com/srogers/oc/tool"
-	"github.com/srogers/oc/tui"
+	"github.com/srogers/oc/tui/common"
+	"github.com/srogers/oc/tui/custom"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -172,23 +173,31 @@ func run(c *cli.Context) error {
 	}, modelCfg, workingDir)
 
 	// Create command registry
-	commands := tui.NewCommandRegistry()
+	commands := common.NewCommandRegistry()
+
+	// Build model fetcher (if provider supports listing)
+	var fetchModels custom.FetchModels
+	if lister, ok := p.(provider.ModelLister); ok {
+		fetchModels = func() ([]string, error) {
+			return lister.ListModels(context.Background())
+		}
+	}
 
 	// Create TUI
-	ui := tui.New(tui.Deps{
+	ui := custom.New(custom.Deps{
 		Source: bus,
 		OnInput: func(text string) {
 			sess.Send(context.Background(), text)
 		},
-		Status: func() tui.StatusInfo {
+		Status: func() custom.StatusInfo {
 			status := "idle"
 			switch sess.GetStatus() {
 			case session.StatusBusy:
 				status = "busy"
 			}
 			tokens := sess.GetTokens()
-			return tui.StatusInfo{
-				Model:         config.Model,
+			return custom.StatusInfo{
+				Model:         sess.GetModel(),
 				Provider:      p.Name(),
 				Detail:        providerDetail,
 				Status:        status,
@@ -201,13 +210,19 @@ func run(c *cli.Context) error {
 			return sess.GetMessages()
 		},
 		Commands: commands,
+		FetchModels: fetchModels,
+		OnModelSelect: func(model string) {
+			sess.SetModel(model)
+			sess.AddLocalMessage("Switched to model: " + model)
+			bus.Publish(event.TopicMsgDone, "model-switch")
+		},
 	})
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	// Register commands (after ui is created so closures can reference it)
-	commands.Register(tui.Command{
+	commands.Register(common.Command{
 		Name:        "clear",
 		Description: "Clear conversation history",
 		Aliases:     []string{"cls", "reset"},
@@ -216,7 +231,7 @@ func run(c *cli.Context) error {
 			bus.Publish(event.TopicStatus, "idle")
 		},
 	})
-	commands.Register(tui.Command{
+	commands.Register(common.Command{
 		Name:        "cancel",
 		Description: "Cancel current operation",
 		Aliases:     []string{"stop", "interrupt"},
@@ -224,7 +239,7 @@ func run(c *cli.Context) error {
 			sess.Cancel()
 		},
 	})
-	commands.Register(tui.Command{
+	commands.Register(common.Command{
 		Name:        "exit",
 		Description: "Exit the application",
 		Aliases:     []string{"quit", "q"},
@@ -232,7 +247,14 @@ func run(c *cli.Context) error {
 			cancel()
 		},
 	})
-	commands.Register(tui.Command{
+	commands.Register(common.Command{
+		Name:        "model",
+		Description: "Switch to a different model",
+		Action: func() {
+			ui.OpenModelPicker()
+		},
+	})
+	commands.Register(common.Command{
 		Name:        "help",
 		Description: "Show available commands",
 		Aliases:     []string{"?", "commands"},

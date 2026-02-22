@@ -57,3 +57,7 @@ func (p *anthropicSubscriptionProvider) Stream(
 func (p *anthropicSubscriptionProvider) Name() string {
 	return "claude-max"
 }
+
+func (p *anthropicSubscriptionProvider) ListModels(ctx context.Context) ([]string, error) {
+	return ListModels(ctx, *p.client, p.auth, p.baseUrl)
+}

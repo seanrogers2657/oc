@@ -1,4 +1,4 @@
-package tui
+package custom
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/srogers/oc/tui/common"
 )
 
 // StatusBar displays model info, token count, and session status.
@@ -19,13 +21,13 @@ func NewStatusBar(getStatus StatusProvider) *StatusBar {
 	return &StatusBar{getStatus: getStatus}
 }
 
-func (sb *StatusBar) Focused() bool     { return false }
-func (sb *StatusBar) SetFocused(f bool) {}
+func (sb *StatusBar) Focused() bool       { return false }
+func (sb *StatusBar) SetFocused(f bool)   {}
 func (sb *StatusBar) MinSize() (int, int) { return 20, 1 }
 
 // Update handles tick events for spinner animation.
-func (sb *StatusBar) Update(ev Event) bool {
-	if _, ok := ev.(TickEvent); ok {
+func (sb *StatusBar) Update(ev common.Event) bool {
+	if _, ok := ev.(common.TickEvent); ok {
 		sb.frame++
 		return true
 	}
@@ -33,12 +35,12 @@ func (sb *StatusBar) Update(ev Event) bool {
 }
 
 // Render draws the status bar.
-func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
+func (sb *StatusBar) Render(buf *common.ScreenBuffer, bounds common.Rect) {
 	if bounds.Width < 1 || bounds.Height < 1 {
 		return
 	}
 
-	bgStyle := Style{BG: NewColor(30, 30, 30), FG: NewColor(180, 180, 180)}
+	bgStyle := common.Style{BG: common.NewColor(30, 30, 30), FG: common.NewColor(180, 180, 180)}
 
 	// Fill background
 	buf.Fill(bounds, ' ', bgStyle)
@@ -46,7 +48,7 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 	x := bounds.X + 1
 
 	if sb.getStatus == nil {
-		buf.WriteString(x, bounds.Y, "oc", Style{BG: NewColor(30, 30, 30), FG: NewColor(100, 200, 100), Bold: true})
+		buf.WriteString(x, bounds.Y, "oc", common.Style{BG: common.NewColor(30, 30, 30), FG: common.NewColor(100, 200, 100), Bold: true})
 		return
 	}
 
@@ -54,17 +56,17 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 
 	// Status indicator
 	var statusIcon string
-	var statusStyle Style
-	statusStyle.BG = NewColor(30, 30, 30)
+	var statusStyle common.Style
+	statusStyle.BG = common.NewColor(30, 30, 30)
 
 	switch info.Status {
 	case "busy":
 		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		statusIcon = frames[sb.frame%len(frames)]
-		statusStyle.FG = NewColor(255, 200, 50)
+		statusStyle.FG = common.NewColor(255, 200, 50)
 	default:
 		statusIcon = "●"
-		statusStyle.FG = NewColor(100, 200, 100)
+		statusStyle.FG = common.NewColor(100, 200, 100)
 	}
 
 	x += buf.WriteString(x, bounds.Y, statusIcon, statusStyle)
@@ -72,14 +74,14 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 
 	// Model name
 	if info.Model != "" {
-		modelStyle := Style{BG: NewColor(30, 30, 30), FG: NewColor(140, 170, 255), Bold: true}
+		modelStyle := common.Style{BG: common.NewColor(30, 30, 30), FG: common.NewColor(140, 170, 255), Bold: true}
 		x += buf.WriteString(x, bounds.Y, info.Model, modelStyle)
 		x += buf.WriteString(x, bounds.Y, " ", bgStyle)
 	}
 
 	// Provider (with optional detail)
 	if info.Provider != "" {
-		provStyle := Style{BG: NewColor(30, 30, 30), FG: NewColor(120, 120, 120)}
+		provStyle := common.Style{BG: common.NewColor(30, 30, 30), FG: common.NewColor(120, 120, 120)}
 		label := info.Provider
 		if info.Detail != "" {
 			label += "/" + info.Detail
@@ -91,7 +93,7 @@ func (sb *StatusBar) Render(buf *ScreenBuffer, bounds Rect) {
 	// Working directory
 	if info.WorkingDir != "" {
 		dir := shortenHome(info.WorkingDir)
-		dirStyle := Style{BG: NewColor(30, 30, 30), FG: NewColor(150, 150, 100)}
+		dirStyle := common.Style{BG: common.NewColor(30, 30, 30), FG: common.NewColor(150, 150, 100)}
 		x += buf.WriteString(x, bounds.Y, dir, dirStyle)
 		x += buf.WriteString(x, bounds.Y, " ", bgStyle)
 	}

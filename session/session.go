@@ -77,6 +77,20 @@ func (s *Session) GetContextTokens() int {
 	return s.contextTokens
 }
 
+// GetModel returns the current model ID.
+func (s *Session) GetModel() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Config.Model
+}
+
+// SetModel changes the model used for subsequent requests.
+func (s *Session) SetModel(model string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Config.Model = model
+}
+
 // AddLocalMessage appends a display-only message that is not sent to the model.
 func (s *Session) AddLocalMessage(text string) {
 	msg := Message{

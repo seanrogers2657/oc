@@ -1,6 +1,4 @@
-package tui
-
-import "github.com/srogers/oc/event"
+package common
 
 // Event is the interface for all things that can happen in the TUI.
 type Event interface {
@@ -48,7 +46,7 @@ func (ResizeEvent) eventType() string { return "resize" }
 
 // CustomEvent carries application-level events from the event bus into the TUI loop.
 type CustomEvent struct {
-	Topic event.Topic
+	Topic string
 	Data  interface{}
 }
 

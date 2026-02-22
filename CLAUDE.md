@@ -19,14 +19,15 @@ Hexagonal architecture with consumer-defined port interfaces. `cmd/oc/` is the c
 ### Package Dependency Graph
 
 ```
-cmd/oc/   -> config/, provider/, tool/, session/, event/, tui/  (composition root)
-tui/      -> session/ (Message types), provider/ (Role, Usage), event/ (Topic), markdown/
-session/  -> provider/ (domain types), tool/ (Context, Result), event/ (Topic)
-tool/     -> provider/ (ToolDef)
-markdown/ -> (stdlib only)
-config/   -> (stdlib only)
-event/    -> (stdlib only)
-provider/ -> (stdlib only)
+cmd/oc/      -> config/, provider/, tool/, session/, event/, tui/common/, tui/custom/
+tui/custom/  -> tui/common/, session/, provider/, event/, markdown/, tool/diff, golang.org/x/term
+tui/common/  -> (stdlib only)
+session/     -> provider/ (domain types), tool/ (Context, Result), event/ (Topic)
+tool/        -> provider/ (ToolDef)
+markdown/    -> (stdlib only)
+config/      -> (stdlib only)
+event/       -> (stdlib only)
+provider/    -> (stdlib only)
 ```
 
 No circular dependencies. All behavior flows through port interfaces.
@@ -39,7 +40,8 @@ No circular dependencies. All behavior flows through port interfaces.
 | `provider/` | AI model communication (streaming) | `provider.go` (port), `openai.go`, `anthropic.go`, `sse.go` |
 | `session/` | Conversation state, agentic loop | `ports.go`, `session.go`, `loop.go`, `message.go` |
 | `tool/` | Tool interface and implementations | `tool.go` (port), `registry.go`, `bash.go`, `read.go`, `write.go`, `edit.go`, `glob.go`, `grep.go` |
-| `tui/` | Terminal rendering engine | `tui.go`, `screen.go`, `ansi.go`, `input.go`, `messagelist.go`, `inputarea.go`, `statusbar.go` |
+| `tui/common/` | Reusable TUI toolkit (stdlib-only) | `screen.go`, `ansi.go`, `input.go`, `inputarea.go`, `event.go`, `command.go`, `cmdpalette.go`, `modelpicker.go`, `fuzzy.go`, `text.go` |
+| `tui/custom/` | OC-specific chat UI | `ui.go`, `ports.go`, `messagelist.go`, `statusbar.go`, `layout.go` |
 | `event/` | Decoupled pub/sub event bus | `bus.go` |
 | `markdown/` | Pure markdown-to-styled-text parser | `render.go` |
 | `config/` | Env var configuration | `config.go` |
@@ -63,8 +65,8 @@ User types in InputArea
 - `session.ModelClient` <- satisfied by `provider.{OpenAI,Anthropic}Provider`
 - `session.ToolExecutor` <- satisfied by `tool.Registry`
 - `session.EventSink` <- satisfied by `event.Bus`
-- `tui.EventSource` <- satisfied by `event.Bus`
-- `tui.InputHandler` <- closure from `cmd/oc/`
+- `custom.EventSource` <- satisfied by `event.Bus`
+- `custom.InputHandler` <- closure from `cmd/oc/`
 
 ### TUI Layout
 

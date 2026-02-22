@@ -1,4 +1,4 @@
-package tui
+package common
 
 import (
 	"strings"
@@ -70,7 +70,7 @@ func (ia *InputArea) questionLineCount(width int) int {
 	if availWidth <= 0 {
 		availWidth = 1
 	}
-	lines := wrapText(ia.promptQuestion, availWidth)
+	lines := WrapText(ia.promptQuestion, availWidth)
 	if len(lines) == 0 {
 		return 1
 	}
@@ -257,7 +257,7 @@ func (ia *InputArea) Render(buf *ScreenBuffer, bounds Rect) {
 		if availWidth <= 0 {
 			availWidth = 1
 		}
-		wrapped := wrapText(ia.promptQuestion, availWidth)
+		wrapped := WrapText(ia.promptQuestion, availWidth)
 		for i, line := range wrapped {
 			qy := bounds.Y + 1 + i
 			if qy >= bounds.Y+bounds.Height {
@@ -345,6 +345,16 @@ func (ia *InputArea) SetPromptMode(on bool, question string) {
 		ia.prompt = "> "
 		ia.hintText = "Enter=send  Alt+Enter=newline  :=commands  C-j/k=scroll  C-c=exit"
 	}
+}
+
+// SetOnSubmit sets the callback invoked when the user presses Enter.
+func (ia *InputArea) SetOnSubmit(fn func(string)) {
+	ia.onSubmit = fn
+}
+
+// InPromptMode returns whether the input area is in prompt mode.
+func (ia *InputArea) InPromptMode() bool {
+	return ia.promptMode
 }
 
 // --- Editing operations ---
