@@ -30,7 +30,7 @@ func TestTokenValid(t *testing.T) {
 
 func TestTokenStoreRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	store := NewTokenStoreAt(filepath.Join(dir, "auth.json"))
+	store := NewTokenStoreAt(filepath.Join(dir, "config.json"))
 
 	// Load from nonexistent file returns nil, nil
 	tok, err := store.Load()
@@ -61,7 +61,7 @@ func TestTokenStoreRoundTrip(t *testing.T) {
 	}
 
 	// Verify file permissions
-	info, err := os.Stat(filepath.Join(dir, "auth.json"))
+	info, err := os.Stat(filepath.Join(dir, "config.json"))
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestTokenStoreRoundTrip(t *testing.T) {
 
 func TestTokenStoreClear(t *testing.T) {
 	dir := t.TempDir()
-	store := NewTokenStoreAt(filepath.Join(dir, "auth.json"))
+	store := NewTokenStoreAt(filepath.Join(dir, "config.json"))
 
 	// Clear nonexistent is fine
 	if err := store.Clear(); err != nil {
@@ -89,4 +89,54 @@ func TestTokenStoreClear(t *testing.T) {
 	if err != nil || tok != nil {
 		t.Fatalf("after Clear, Load() = %v, %v; want nil, nil", tok, err)
 	}
+}
+
+func TestTokenStorePreservesOtherConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Write a config file with provider set
+	os.WriteFile(path, []byte(`{"provider": "anthropic", "model": "claude-sonnet-4-20250514"}`), 0600)
+
+	store := NewTokenStoreAt(path)
+	store.Save(&Token{
+		AccessToken:  "tok",
+		RefreshToken: "rt",
+		ExpiresAt:    time.Now().Add(1 * time.Hour),
+		TokenType:    "bearer",
+	})
+
+	// Read raw file and verify provider is still there
+	data, _ := os.ReadFile(path)
+	content := string(data)
+	if !contains(content, `"provider"`) {
+		t.Errorf("Save clobbered provider field: %s", content)
+	}
+	if !contains(content, `"access_token"`) {
+		t.Errorf("Save didn't write access_token: %s", content)
+	}
+
+	// Clear token and verify provider survives
+	store.Clear()
+	data, _ = os.ReadFile(path)
+	content = string(data)
+	if !contains(content, `"provider"`) {
+		t.Errorf("Clear clobbered provider field: %s", content)
+	}
+	if contains(content, `"access_token"`) {
+		t.Errorf("Clear didn't remove access_token: %s", content)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

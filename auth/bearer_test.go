@@ -11,7 +11,7 @@ import (
 
 func TestBearerAuthSetsHeader(t *testing.T) {
 	dir := t.TempDir()
-	store := NewTokenStoreAt(filepath.Join(dir, "auth.json"))
+	store := NewTokenStoreAt(filepath.Join(dir, "config.json"))
 	cfg := &OAuthConfig{
 		ExtraHeaders: map[string]string{"x-custom": "value"},
 	}
@@ -37,7 +37,7 @@ func TestBearerAuthSetsHeader(t *testing.T) {
 
 func TestBearerAuthExtraHeaderAppends(t *testing.T) {
 	dir := t.TempDir()
-	store := NewTokenStoreAt(filepath.Join(dir, "auth.json"))
+	store := NewTokenStoreAt(filepath.Join(dir, "config.json"))
 	cfg := &OAuthConfig{
 		ExtraHeaders: map[string]string{"x-beta": "oauth-flag"},
 	}
@@ -74,7 +74,7 @@ func TestBearerAuthRefreshesExpiredToken(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	store := NewTokenStoreAt(filepath.Join(dir, "auth.json"))
+	store := NewTokenStoreAt(filepath.Join(dir, "config.json"))
 	cfg := &OAuthConfig{
 		ClientID: "test-client",
 		TokenURL: srv.URL,
@@ -117,7 +117,7 @@ func TestBearerAuthRefreshError(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	store := NewTokenStoreAt(filepath.Join(dir, "auth.json"))
+	store := NewTokenStoreAt(filepath.Join(dir, "config.json"))
 	cfg := &OAuthConfig{
 		ClientID: "test-client",
 		TokenURL: srv.URL,

@@ -1,10 +1,9 @@
 package auth
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"time"
+
+	"github.com/srogers/oc/config"
 )
 
 // Token holds OAuth access and refresh tokens.
@@ -23,15 +22,14 @@ func (t *Token) Valid() bool {
 	return time.Now().Add(5 * time.Minute).Before(t.ExpiresAt)
 }
 
-// TokenStore persists tokens to ~/.oc/auth.json.
+// TokenStore persists tokens within ~/.oc/config.json.
 type TokenStore struct {
 	path string
 }
 
-// NewTokenStore returns a store using the default path ~/.oc/auth.json.
+// NewTokenStore returns a store using the default path ~/.oc/config.json.
 func NewTokenStore() *TokenStore {
-	home, _ := os.UserHomeDir()
-	return &TokenStore{path: filepath.Join(home, ".oc", "auth.json")}
+	return &TokenStore{path: config.DefaultPath()}
 }
 
 // NewTokenStoreAt returns a store using a custom path (for testing).
@@ -39,41 +37,53 @@ func NewTokenStoreAt(path string) *TokenStore {
 	return &TokenStore{path: path}
 }
 
-// Load reads the stored token. Returns nil, nil if the file doesn't exist.
+// Load reads the stored token from the config file.
+// Returns nil, nil if the file doesn't exist or contains no token.
 func (s *TokenStore) Load() (*Token, error) {
-	data, err := os.ReadFile(s.path)
+	fc, err := config.LoadFile(s.path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	var t Token
-	if err := json.Unmarshal(data, &t); err != nil {
-		return nil, err
+	if fc == nil || fc.AccessToken == nil {
+		return nil, nil
 	}
-	return &t, nil
+	t := &Token{
+		AccessToken: *fc.AccessToken,
+	}
+	if fc.RefreshToken != nil {
+		t.RefreshToken = *fc.RefreshToken
+	}
+	if fc.ExpiresAt != nil {
+		t.ExpiresAt = *fc.ExpiresAt
+	}
+	if fc.TokenType != nil {
+		t.TokenType = *fc.TokenType
+	}
+	return t, nil
 }
 
-// Save writes the token to disk, creating the directory with mode 0700
-// and the file with mode 0600.
+// Save writes the token into the config file, preserving other fields.
 func (s *TokenStore) Save(t *Token) error {
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
+	fc, _ := config.LoadFile(s.path)
+	if fc == nil {
+		fc = &config.FileConfig{}
 	}
-	data, err := json.Marshal(t)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, data, 0600)
+	fc.AccessToken = &t.AccessToken
+	fc.RefreshToken = &t.RefreshToken
+	fc.ExpiresAt = &t.ExpiresAt
+	fc.TokenType = &t.TokenType
+	return config.SaveFile(s.path, fc)
 }
 
-// Clear deletes the stored token file.
+// Clear removes the token fields from the config file, preserving other fields.
 func (s *TokenStore) Clear() error {
-	err := os.Remove(s.path)
-	if os.IsNotExist(err) {
+	fc, _ := config.LoadFile(s.path)
+	if fc == nil {
 		return nil
 	}
-	return err
+	fc.AccessToken = nil
+	fc.RefreshToken = nil
+	fc.ExpiresAt = nil
+	fc.TokenType = nil
+	return config.SaveFile(s.path, fc)
 }

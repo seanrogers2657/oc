@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -92,42 +93,47 @@ func main() {
 }
 
 func run(c *cli.Context) error {
-	config := config.Load()
+	// Load file config (~/.oc/config.json), warn on parse error
+	fc, err := config.LoadFile(config.DefaultPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %s: %v\n", config.DefaultPath(), err)
+	}
+
+	cfg := config.Load(fc)
 
 	// CLI flags override env vars
 	if v := c.String("provider"); v != "" {
-		config.Provider = v
+		cfg.Provider = v
 	}
 	if v := c.String("model"); v != "" {
-		config.Model = v
+		cfg.Model = v
 	}
 	if v := c.String("api-key"); v != "" {
-		config.APIKey = v
+		cfg.APIKey = v
 	}
 	if v := c.String("base-url"); v != "" {
-		config.BaseURL = v
+		cfg.BaseURL = v
 	}
 
 	// Select provider adapter
 	var p provider.Provider
 	var providerDetail string
-	var err error
 	enableTools := true
-	switch config.Provider {
+	switch cfg.Provider {
 	case "anthropic", "claude-max":
-		if config.Provider == "anthropic" && config.APIKey != "" {
-			p, err = anthropic.NewAnthropicApiProvider(config, nil, anthropic.AnthropicBaseUrl)
+		if cfg.Provider == "anthropic" && cfg.APIKey != "" {
+			p, err = anthropic.NewAnthropicApiProvider(cfg, nil, anthropic.AnthropicBaseUrl)
 		} else {
-			p, err = anthropic.NewAnthropicSubscriptionProvider(config, nil, anthropic.AnthropicBaseUrl)
+			p, err = anthropic.NewAnthropicSubscriptionProvider(cfg, nil, anthropic.AnthropicBaseUrl)
 		}
 	default:
 		// OpenAI-compatible (covers openai, ollama, lm studio, vllm, etc.)
-		if config.BaseURL == "" {
-			return fmt.Errorf("base URL required for provider %q (set OC_BASE_URL)", config.Provider)
+		if cfg.BaseURL == "" {
+			return fmt.Errorf("base URL required for provider %q (set OC_BASE_URL)", cfg.Provider)
 		}
-		p = openai.NewOpenAI(config.Provider, config.APIKey, config.BaseURL)
-		if config.Provider == "ollama" {
-			enableTools = checkOllamaTools(config.BaseURL, config.Model)
+		p = openai.NewOpenAI(cfg.Provider, cfg.APIKey, cfg.BaseURL)
+		if cfg.Provider == "ollama" {
+			enableTools = checkOllamaTools(cfg.BaseURL, cfg.Model)
 		}
 	}
 
@@ -149,13 +155,13 @@ func run(c *cli.Context) error {
 	}
 
 	// Build model config
-	modelCfg := provider.ModelConfig{Model: config.Model}
-	if config.Temperature != 0 {
-		t := config.Temperature
+	modelCfg := provider.ModelConfig{Model: cfg.Model}
+	if cfg.Temperature != 0 {
+		t := cfg.Temperature
 		modelCfg.Temperature = &t
 	}
-	if config.MaxTokens != 0 {
-		m := config.MaxTokens
+	if cfg.MaxTokens != 0 {
+		m := cfg.MaxTokens
 		modelCfg.MaxTokens = &m
 	}
 
@@ -219,6 +225,7 @@ func run(c *cli.Context) error {
 		FetchModels: fetchModels,
 		OnModelSelect: func(model string) {
 			sess.SetModel(model)
+			saveConfigField(func(fc *config.FileConfig) { fc.Model = &model })
 			sess.AddLocalMessage("Switched to model: " + model)
 			bus.Publish(event.TopicMsgDone, "model-switch")
 		},
@@ -270,6 +277,16 @@ func run(c *cli.Context) error {
 		Description: "Toggle FPS counter display",
 		Action: func() {
 			ui.ToggleFPS()
+		},
+	})
+	commands.Register(common.Command{
+		Name:        "doctor",
+		Description: "Show provider configuration status",
+		Action: func() {
+			var buf strings.Builder
+			_ = doctor(&buf, p.Name(), buildProviderChecks(cfg))
+			sess.AddLocalMessage(buf.String())
+			bus.Publish(event.TopicMsgDone, "doctor")
 		},
 	})
 	commands.Register(common.Command{
@@ -334,4 +351,129 @@ func checkOllamaTools(baseURL, model string) bool {
 	}
 
 	return slices.Contains(result.Capabilities, "tools")
+}
+
+type providerCheck struct {
+	name  string
+	check func() (ok bool, message string)
+}
+
+// buildProviderChecks returns the real provider checks for cfg.
+func buildProviderChecks(cfg config.Config) []providerCheck {
+	// Determine Ollama native API base (strip /v1 if present)
+	ollamaBase := "http://localhost:11434"
+	if cfg.Provider == "ollama" && cfg.BaseURL != "" {
+		ollamaBase = strings.TrimSuffix(cfg.BaseURL, "/")
+		ollamaBase = strings.TrimSuffix(ollamaBase, "/v1")
+	}
+
+	return []providerCheck{
+		{
+			name: "anthropic-api",
+			check: func() (bool, string) {
+				if os.Getenv("ANTHROPIC_API_KEY") == "" {
+					return false, "no API key (set ANTHROPIC_API_KEY)"
+				}
+				return true, "API key configured"
+			},
+		},
+		{
+			name: "claude-max",
+			check: func() (bool, string) {
+				token, err := auth.NewTokenStore().Load()
+				if err != nil {
+					return false, "error reading credentials: " + err.Error()
+				}
+				if token == nil || !token.Valid() {
+					return false, "not authenticated — run: oc login"
+				}
+				return true, "authenticated (token expires " + token.ExpiresAt.Format(time.RFC3339) + ")"
+			},
+		},
+		{
+			name: "openai",
+			check: func() (bool, string) {
+				if os.Getenv("OPENAI_API_KEY") == "" {
+					return false, "no API key (set OPENAI_API_KEY)"
+				}
+				return true, "API key configured"
+			},
+		},
+		{
+			name: "ollama",
+			check: func() (bool, string) {
+				models, err := listOllamaModels(ollamaBase)
+				if err != nil {
+					return false, "not reachable at " + ollamaBase
+				}
+				n := len(models)
+				if n == 0 {
+					return true, "running at " + ollamaBase + " (no models)"
+				}
+				suffix := "s"
+				if n == 1 {
+					suffix = ""
+				}
+				return true, fmt.Sprintf("running at %s (%d model%s)", ollamaBase, n, suffix)
+			},
+		},
+	}
+}
+
+// doctor writes provider status to w. Extracted for testability.
+func doctor(w io.Writer, activeProvider string, checks []providerCheck) error {
+	fmt.Fprintln(w, "Provider status:")
+	fmt.Fprintln(w)
+	for _, pc := range checks {
+		ok, msg := pc.check()
+		mark := "✓"
+		if !ok {
+			mark = "✗"
+		}
+		active := ""
+		if pc.name == activeProvider {
+			active = " (active)"
+		}
+		fmt.Fprintf(w, "  %s  %-12s %s%s\n", mark, pc.name, msg, active)
+	}
+	fmt.Fprintln(w)
+	return nil
+}
+
+// listOllamaModels queries the Ollama /api/tags endpoint and returns model names.
+func listOllamaModels(baseURL string) ([]string, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(baseURL + "/api/tags")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var result struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	names := make([]string, len(result.Models))
+	for i, m := range result.Models {
+		names[i] = m.Name
+	}
+	return names, nil
+}
+
+// saveConfigField loads ~/.oc/config.json, applies mutate, and writes it back.
+// Errors are silently ignored — saving config is best-effort.
+func saveConfigField(mutate func(fc *config.FileConfig)) {
+	path := config.DefaultPath()
+	fc, _ := config.LoadFile(path)
+	if fc == nil {
+		fc = &config.FileConfig{}
+	}
+	mutate(fc)
+	config.SaveFile(path, fc)
 }
