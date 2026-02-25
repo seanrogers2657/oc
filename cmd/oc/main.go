@@ -15,6 +15,7 @@ import (
 	"github.com/srogers/oc/auth"
 	"github.com/srogers/oc/config"
 	"github.com/srogers/oc/event"
+	"github.com/srogers/oc/history"
 	"github.com/srogers/oc/provider"
 	"github.com/srogers/oc/provider/anthropic"
 	"github.com/srogers/oc/provider/openai"
@@ -173,6 +174,9 @@ func run(c *cli.Context) error {
 		Events: bus,
 	}, modelCfg, workingDir)
 
+	// Create history store
+	histStore := history.NewStore()
+
 	// Create command registry
 	commands := common.NewCommandRegistry()
 
@@ -188,6 +192,7 @@ func run(c *cli.Context) error {
 	ui := custom.New(custom.Deps{
 		Source: bus,
 		OnInput: func(text string) {
+			histStore.Append(text)
 			sess.Send(context.Background(), text)
 		},
 		Status: func() custom.StatusInfo {
@@ -218,6 +223,11 @@ func run(c *cli.Context) error {
 			bus.Publish(event.TopicMsgDone, "model-switch")
 		},
 	})
+
+	// Load prompt history into input area
+	if entries, err := histStore.Load(); err == nil && len(entries) > 0 {
+		ui.InputArea().SetHistory(entries)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -253,6 +263,13 @@ func run(c *cli.Context) error {
 		Description: "Switch to a different model",
 		Action: func() {
 			ui.OpenModelPicker()
+		},
+	})
+	commands.Register(common.Command{
+		Name:        "fps",
+		Description: "Toggle FPS counter display",
+		Action: func() {
+			ui.ToggleFPS()
 		},
 	})
 	commands.Register(common.Command{

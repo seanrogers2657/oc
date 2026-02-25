@@ -671,6 +671,56 @@ func TestInputAreaCursorVisualPos(t *testing.T) {
 	}
 }
 
+func TestInputAreaSetHistoryAndHistory(t *testing.T) {
+	ia := newTestInputArea()
+	ia.SetHistory([]string{"alpha", "beta", "gamma"})
+
+	got := ia.History()
+	if len(got) != 3 || got[0] != "alpha" || got[1] != "beta" || got[2] != "gamma" {
+		t.Fatalf("History() = %v, want [alpha beta gamma]", got)
+	}
+
+	// Mutating the returned slice should not affect the internal state
+	got[0] = "modified"
+	if ia.History()[0] != "alpha" {
+		t.Fatal("History() returned slice should be a copy")
+	}
+}
+
+func TestInputAreaSetHistoryNavigateUp(t *testing.T) {
+	ia := newTestInputArea()
+	ia.onSubmit = func(string) {}
+
+	// Pre-load history as if restored from disk
+	ia.SetHistory([]string{"old1", "old2"})
+
+	// Press Up to navigate pre-loaded history
+	sendKey(ia, KeyUp) // -> "old2"
+	if ia.Text() != "old2" {
+		t.Fatalf("Up 1: Text() = %q, want %q", ia.Text(), "old2")
+	}
+	sendKey(ia, KeyUp) // -> "old1"
+	if ia.Text() != "old1" {
+		t.Fatalf("Up 2: Text() = %q, want %q", ia.Text(), "old1")
+	}
+	sendKey(ia, KeyDown) // -> "old2"
+	sendKey(ia, KeyDown) // -> draft (empty)
+	if ia.Text() != "" {
+		t.Fatalf("Down past end: Text() = %q, want empty", ia.Text())
+	}
+
+	// Submit a new entry — it appends to the pre-loaded history
+	submitText(ia, "new1")
+	sendKey(ia, KeyUp) // -> "new1"
+	if ia.Text() != "new1" {
+		t.Fatalf("Up after submit: Text() = %q, want %q", ia.Text(), "new1")
+	}
+	sendKey(ia, KeyUp) // -> "old2"
+	if ia.Text() != "old2" {
+		t.Fatalf("Up to old: Text() = %q, want %q", ia.Text(), "old2")
+	}
+}
+
 func TestInputAreaHistoryMultiLineUpDown(t *testing.T) {
 	ia := newTestInputArea()
 	ia.onSubmit = func(string) {}

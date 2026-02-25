@@ -1,6 +1,5 @@
 * [bug] rendering when resizing shows the prompt sometimes, investigate and fix
 * [feature] provider onboarding mid session, type in details, saves to user config file
-* [feature] fps command - display an fps counter in the top right corner
 * [feature] baseline context - files that should be automatically consumed when running prompts without the user having to specify
 * [feature] doctor command so that users can check which possible providers are setup and if something went wrong
 * [feature] should know what providers are setup so that we can offer as much mid session model switching as possible

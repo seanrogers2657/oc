@@ -576,6 +576,20 @@ func (ia *InputArea) deleteWordBackward() {
 	ia.lines[ia.cursorY] = append(line[:ia.cursorX], line[end:]...)
 }
 
+// SetHistory replaces the history slice (used at startup to load persisted history).
+func (ia *InputArea) SetHistory(entries []string) {
+	ia.history = make([]string, len(entries))
+	copy(ia.history, entries)
+	ia.historyIdx = -1
+}
+
+// History returns a copy of the history slice (used at shutdown to save).
+func (ia *InputArea) History() []string {
+	out := make([]string, len(ia.history))
+	copy(out, ia.history)
+	return out
+}
+
 // --- History ---
 
 func (ia *InputArea) historyBack() {

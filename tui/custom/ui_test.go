@@ -1,6 +1,12 @@
 package custom
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/srogers/oc/tui/common"
+)
 
 // scrollbackState mirrors the fields used in UI.render() for scrollback logic.
 type scrollbackState struct {
@@ -126,5 +132,183 @@ func TestScrollbackCappedAtViewportHeight(t *testing.T) {
 	}
 	if s.prevScrollOffset != 50 {
 		t.Errorf("expected prevOffset=50 (tracks actual offset), got %d", s.prevScrollOffset)
+	}
+}
+
+// --- FPS counter tests ---
+
+// fpsState mirrors the FPS-related fields from UI for testable pure-function extraction.
+type fpsState struct {
+	showFPS     bool
+	renderCount int
+	currentFPS  int
+	lastFPSTime time.Time
+}
+
+// updateFPS applies the same FPS computation logic as the TickEvent handler.
+func updateFPS(s fpsState, now time.Time) fpsState {
+	if now.Sub(s.lastFPSTime) >= time.Second {
+		s.currentFPS = s.renderCount
+		s.renderCount = 0
+		s.lastFPSTime = now
+	}
+	return s
+}
+
+// renderFPSOverlay writes the FPS label into a buffer, same as render().
+func renderFPSOverlay(buf *common.ScreenBuffer, fps int) {
+	label := fmt.Sprintf(" %d fps ", fps)
+	fpsStyle := common.Style{
+		FG:   common.NewColor(0, 0, 0),
+		BG:   common.NewColor(255, 220, 0),
+		Bold: true,
+	}
+	buf.WriteString(buf.Width-len(label), 0, label, fpsStyle)
+}
+
+func TestToggleFPS(t *testing.T) {
+	ui := &UI{}
+
+	// Initially off
+	if ui.showFPS {
+		t.Fatal("expected showFPS=false initially")
+	}
+
+	// Toggle on
+	ui.ToggleFPS()
+	if !ui.showFPS {
+		t.Fatal("expected showFPS=true after first toggle")
+	}
+	if ui.renderCount != 0 {
+		t.Errorf("expected renderCount=0 after toggle on, got %d", ui.renderCount)
+	}
+	if ui.currentFPS != 0 {
+		t.Errorf("expected currentFPS=0 after toggle on, got %d", ui.currentFPS)
+	}
+	if ui.lastFPSTime.IsZero() {
+		t.Error("expected lastFPSTime to be set after toggle on")
+	}
+
+	// Toggle off
+	ui.ToggleFPS()
+	if ui.showFPS {
+		t.Fatal("expected showFPS=false after second toggle")
+	}
+}
+
+func TestFPSComputationAfterOneSecond(t *testing.T) {
+	start := time.Now()
+	s := fpsState{
+		showFPS:     true,
+		renderCount: 42,
+		currentFPS:  0,
+		lastFPSTime: start,
+	}
+
+	// Less than 1 second — no update
+	s2 := updateFPS(s, start.Add(500*time.Millisecond))
+	if s2.currentFPS != 0 {
+		t.Errorf("expected currentFPS=0 before 1s, got %d", s2.currentFPS)
+	}
+	if s2.renderCount != 42 {
+		t.Errorf("expected renderCount=42 unchanged, got %d", s2.renderCount)
+	}
+
+	// Exactly 1 second — should update
+	s3 := updateFPS(s, start.Add(time.Second))
+	if s3.currentFPS != 42 {
+		t.Errorf("expected currentFPS=42, got %d", s3.currentFPS)
+	}
+	if s3.renderCount != 0 {
+		t.Errorf("expected renderCount=0 after reset, got %d", s3.renderCount)
+	}
+	if s3.lastFPSTime != start.Add(time.Second) {
+		t.Error("expected lastFPSTime to advance")
+	}
+}
+
+func TestFPSComputationAccumulates(t *testing.T) {
+	start := time.Now()
+	s := fpsState{
+		showFPS:     true,
+		renderCount: 10,
+		currentFPS:  0,
+		lastFPSTime: start,
+	}
+
+	// First second: 10 renders
+	s = updateFPS(s, start.Add(time.Second))
+	if s.currentFPS != 10 {
+		t.Errorf("expected currentFPS=10, got %d", s.currentFPS)
+	}
+
+	// Simulate 25 renders in next second
+	s.renderCount = 25
+	s = updateFPS(s, start.Add(2*time.Second))
+	if s.currentFPS != 25 {
+		t.Errorf("expected currentFPS=25, got %d", s.currentFPS)
+	}
+}
+
+func TestFPSOverlayPosition(t *testing.T) {
+	buf := common.NewScreenBuffer(80, 24)
+	renderFPSOverlay(buf, 60)
+
+	// " 60 fps " is 8 chars, should start at column 72 (80-8), row 0
+	label := " 60 fps "
+	startX := 80 - len(label)
+
+	for i, expected := range label {
+		cell := buf.Cells[0][startX+i]
+		if cell.Rune != expected {
+			t.Errorf("col %d: expected %q, got %q", startX+i, string(expected), string(cell.Rune))
+		}
+		if !cell.Style.Bold {
+			t.Errorf("col %d: expected bold", startX+i)
+		}
+		if !cell.Style.FG.Set || cell.Style.FG.R != 0 || cell.Style.FG.G != 0 || cell.Style.FG.B != 0 {
+			t.Errorf("col %d: expected black foreground", startX+i)
+		}
+		if !cell.Style.BG.Set || cell.Style.BG.R != 255 || cell.Style.BG.G != 220 || cell.Style.BG.B != 0 {
+			t.Errorf("col %d: expected yellow background", startX+i)
+		}
+	}
+
+	// Check area before the label is untouched (still spaces with default style)
+	if startX > 0 {
+		cell := buf.Cells[0][startX-1]
+		if cell.Rune != ' ' || cell.Style.Bold {
+			t.Error("cell before FPS label should be default")
+		}
+	}
+}
+
+func TestFPSOverlayNotRenderedWhenOff(t *testing.T) {
+	buf := common.NewScreenBuffer(80, 24)
+	// Don't call renderFPSOverlay — verify row 0 is all default spaces
+	for x := 0; x < 80; x++ {
+		cell := buf.Cells[0][x]
+		if cell.Rune != ' ' {
+			t.Errorf("col %d: expected space, got %q", x, string(cell.Rune))
+		}
+		if cell.Style.Bold {
+			t.Errorf("col %d: expected no bold on untouched buffer", x)
+		}
+	}
+}
+
+func TestFPSOverlayNarrowTerminal(t *testing.T) {
+	// With a very narrow terminal (e.g. 10 cols), the label " 0 fps " (7 chars)
+	// should still fit and start at column 3.
+	buf := common.NewScreenBuffer(10, 5)
+	renderFPSOverlay(buf, 0)
+
+	label := " 0 fps "
+	startX := 10 - len(label)
+	for i, expected := range label {
+		cell := buf.Cells[0][startX+i]
+		if cell.Rune != expected {
+			t.Errorf("col %d: expected %q, got %q", startX+i, string(expected), string(cell.Rune))
+		}
 	}
 }

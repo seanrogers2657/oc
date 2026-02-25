@@ -2,6 +2,7 @@ package custom
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -51,6 +52,12 @@ type UI struct {
 
 	// Prompt mode state (for tool asking user a question)
 	promptResponse chan<- string // non-nil while awaiting a prompt answer
+
+	// FPS counter
+	showFPS     bool
+	renderCount int
+	currentFPS  int
+	lastFPSTime time.Time
 }
 
 // New creates a new UI with the given dependencies.
@@ -258,9 +265,19 @@ func (t *UI) handleEvent(ev common.Event, cancel context.CancelFunc) bool {
 		}
 
 	case common.TickEvent:
+		// Update FPS counter
+		if now := time.Now(); now.Sub(t.lastFPSTime) >= time.Second {
+			t.currentFPS = t.renderCount
+			t.renderCount = 0
+			t.lastFPSTime = now
+		}
+
 		dirty := t.statusBar.Update(ev)
 		dirty = t.messageList.Update(ev) || dirty
 		dirty = t.inputArea.Update(ev) || dirty
+		if t.showFPS {
+			dirty = true
+		}
 		if dirty {
 			t.render()
 		}
@@ -295,6 +312,18 @@ func (t *UI) render() {
 	}
 	if t.modelPicker != nil && t.modelPicker.Active() {
 		t.modelPicker.Render(t.next, t.width, t.height)
+	}
+
+	// FPS overlay
+	t.renderCount++
+	if t.showFPS {
+		label := fmt.Sprintf(" %d fps ", t.currentFPS)
+		fpsStyle := common.Style{
+			FG: common.NewColor(0, 0, 0),
+			BG: common.NewColor(255, 220, 0),
+			Bold: true,
+		}
+		t.next.WriteString(t.width-len(label), 0, label, fpsStyle)
 	}
 
 	// Scrollback: push lines into terminal scrollback when auto-scrolling
@@ -353,6 +382,18 @@ func (t *UI) fullRender() {
 		t.modelPicker.Render(t.next, t.width, t.height)
 	}
 
+	// FPS overlay
+	t.renderCount++
+	if t.showFPS {
+		label := fmt.Sprintf(" %d fps ", t.currentFPS)
+		fpsStyle := common.Style{
+			FG: common.NewColor(0, 0, 0),
+			BG: common.NewColor(255, 220, 0),
+			Bold: true,
+		}
+		t.next.WriteString(t.width-len(label), 0, label, fpsStyle)
+	}
+
 	io.WriteString(os.Stdout, t.next.FullRender())
 
 	// Sync scroll offset so render() doesn't see a stale delta
@@ -367,12 +408,27 @@ func (t *UI) fullRender() {
 	t.current, t.next = t.next, t.current
 }
 
+// InputArea returns the underlying InputArea component.
+func (t *UI) InputArea() *common.InputArea {
+	return t.inputArea
+}
+
 // OpenModelPicker opens the model picker overlay with the current model highlighted.
 func (t *UI) OpenModelPicker() {
 	if t.modelPicker != nil {
 		status := t.deps.Status()
 		t.modelPicker.Open(status.Model)
 		t.render()
+	}
+}
+
+// ToggleFPS toggles the FPS counter overlay.
+func (t *UI) ToggleFPS() {
+	t.showFPS = !t.showFPS
+	if t.showFPS {
+		t.renderCount = 0
+		t.currentFPS = 0
+		t.lastFPSTime = time.Now()
 	}
 }
 
