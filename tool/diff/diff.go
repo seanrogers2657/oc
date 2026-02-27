@@ -1,5 +1,3 @@
-// Package diff provides unified diff generation for displaying file changes
-// in a git-style format with proper context lines and change detection.
 package diff
 
 import (

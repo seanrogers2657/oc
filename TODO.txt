@@ -1,20 +1,21 @@
+* [feature] configurable fps setting, via user settings (global)
+* [feature] ? for keyboard shortcuts/help, this will probably require creating a new scrollable TUI component so that the user can move up and down to see what key bindings are available.
+* [feature] project based && user based settings, basically .oc/ folder in current directory with all project based configurations that we should adhere to. and ~/.oc/config.json for user based settings.
 * [feature] provider onboarding mid session, type in details, saves to user config file
 * [feature] baseline context - files that should be automatically consumed when running prompts without the user having to specify
 * [feature] should know what providers are setup so that we can offer as much mid session model switching as possible
 * [feature] enable other models and store configuration for it. Look for project based config first, ie ./.oc/config.json Then look for user based config ~/.oc/config.json
-* [feature] project based, user based settings, basically .oc/ folder in current directory with all project based configurations that we should adhere to. and ~/.oc/config.json for user based settings.
 * [feature] expanded view for tools so user can see more detail, ctrl-o for more details?
 * [feature] expand cli tool with ability to pass in prompt
 * [feature] sandbox environment. Using simple allow list semantics and project based files (.oc/sandbox.json), lets setup the ability to limit the power of oc so it doesn't cause damage.
 * [feature] compact conversation, recent messages more relevant that older messages and show the current context fill percentage in status line, manual for now, automatic later
-* [feature] add the ability to simulate rate limits in the oc tool. possibly declared in project configuration.
+* [feature] add the ability to simulate rate limits in the oc tool. declared in configuration file, under provider settings
 * [feature] i guess we can do a dedicated "plan mode"
 * [feature] subagents
 * [feature] continue sessions?
 * [feature] system prompt?
 * [feature] cost tracking - wire up per-token pricing for known models and show running cost in the status bar. The StatusInfo.Cost field already exists but is never populated.
 * [feature] context window fill indicator - show context usage as a fraction (e.g. "ctx 12k/200k") in the status bar so users know when they're approaching the model's limit.
-* [feature] copy last response - keyboard shortcut (e.g. Ctrl+Y) to copy the last assistant message text to the system clipboard.
 * [feature] image/screenshot input - support pasting or referencing image files in prompts for multimodal models.
 * [feature] git-aware context - auto-include git diff/status in the system prompt so the model knows what's changed in the working tree.
 * [feature] undo last edit/write - a :undo command that reverts the last file modification using the diff already stored on the tool result.
@@ -23,7 +24,7 @@
 * [feature] custom commands
 * [feature] marketplaces (for updatable custom commands & groupings, simple git repos where we can look at the commit hash to determine if they need to be updated
 * [feature] auto compact strategies
-* [feature] auto updater? 
+* [feature] auto updater?
 * [feature] telemetry to see which features are useful
-* [feature] change configs mid session, toggles, inputs, have it be accessed via a :command
+* [feature] change configs mid session, toggles, inputs, have it be accessed via a command (: or /)
 * [bug] rendering when resizing shows the prompt sometimes, investigate and fix

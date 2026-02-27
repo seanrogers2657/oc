@@ -3,6 +3,7 @@ package custom
 import (
 	"testing"
 
+	"github.com/srogers/oc/domain"
 	"github.com/srogers/oc/tui/common"
 )
 
@@ -81,7 +82,7 @@ func TestStatusBarUpdateTick(t *testing.T) {
 
 func TestStatusBarUpdateNonTick(t *testing.T) {
 	sb := NewStatusBar(nil)
-	dirty := sb.Update(common.KeyEvent{Key: common.KeyRune, Rune: 'a'})
+	dirty := sb.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'a'})
 	if dirty {
 		t.Error("non-tick event should return dirty=false")
 	}

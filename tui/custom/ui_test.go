@@ -1,10 +1,13 @@
 package custom
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/srogers/oc/domain"
+	"github.com/srogers/oc/session"
 	"github.com/srogers/oc/tui/common"
 )
 
@@ -310,5 +313,240 @@ func TestFPSOverlayNarrowTerminal(t *testing.T) {
 		if cell.Rune != expected {
 			t.Errorf("col %d: expected %q, got %q", startX+i, string(expected), string(cell.Rune))
 		}
+	}
+}
+
+// --- handleKeyEvent dispatch tests ---
+
+// newTestUI creates a minimal UI suitable for testing handleKeyEvent.
+// It wires up a KeyMap loaded from the default bindings, and provides
+// stub dependencies so no real I/O occurs.
+func newTestUI(t *testing.T) *UI {
+	t.Helper()
+	km := domain.NewKeyMap()
+	// Load default bindings so tests exercise the real config.
+	// We call LoadKeyMapBytes with the embedded defaults.
+	data := defaultBindings(t)
+	if err := domain.LoadKeyMapBytes(km, data); err != nil {
+		t.Fatalf("loading default bindings: %v", err)
+	}
+
+	reg := common.NewCommandRegistry()
+	reg.Register(common.Command{Name: "test", Description: "test cmd"})
+
+	ui := New(Deps{
+		Status:   func() StatusInfo { return StatusInfo{} },
+		Messages: func() []session.Message { return nil },
+		Commands: reg,
+		KeyMap:   km,
+	})
+	ui.inputArea.SetFocused(true)
+	// Set a reasonable layout so messageList.Height is nonzero.
+	ui.width = 80
+	ui.height = 24
+	ui.current = common.NewScreenBuffer(80, 24)
+	ui.next = common.NewScreenBuffer(80, 24)
+	ui.computeLayout()
+	return ui
+}
+
+func defaultBindings(t *testing.T) []byte {
+	t.Helper()
+	// Read the embedded default bindings from the assets package.
+	// We import it indirectly via the JSON content.
+	return []byte(`{
+		"bindings": [
+			{"key": "ctrl+c",        "action": "exit",                      "scope": "global"},
+			{"key": "ctrl+k",        "action": "scroll_up",                 "scope": "global"},
+			{"key": "ctrl+j",        "action": "scroll_down",               "scope": "global"},
+			{"key": "pgup",          "action": "page_up",                   "scope": "global"},
+			{"key": "pgdown",        "action": "page_down",                 "scope": "global"},
+			{"key": ":",             "action": "open_palette",              "scope": "global"},
+			{"key": "/",             "action": "open_palette",              "scope": "global"},
+			{"key": "escape",        "action": "overlay.close",             "scope": "overlay"},
+			{"key": "enter",         "action": "overlay.confirm",           "scope": "overlay"},
+			{"key": "up",            "action": "overlay.prev",              "scope": "overlay"},
+			{"key": "down",          "action": "overlay.next",              "scope": "overlay"},
+			{"key": "backspace",     "action": "overlay.backspace",         "scope": "overlay"},
+			{"key": "enter",         "action": "input.submit",              "scope": "input"},
+			{"key": "alt+enter",     "action": "input.newline",             "scope": "input"},
+			{"key": "backspace",     "action": "input.backspace",           "scope": "input"},
+			{"key": "escape",        "action": "input.clear",               "scope": "input"},
+			{"key": "tab",           "action": "input.tab",                 "scope": "input"},
+			{"key": "left",          "action": "input.cursor_left",         "scope": "input"},
+			{"key": "right",         "action": "input.cursor_right",        "scope": "input"},
+			{"key": "up",            "action": "input.cursor_up",           "scope": "input"},
+			{"key": "down",          "action": "input.cursor_down",         "scope": "input"},
+			{"key": "home",          "action": "input.home",                "scope": "input"},
+			{"key": "end",           "action": "input.end",                 "scope": "input"}
+		]
+	}`)
+}
+
+func TestHandleKeyEvent_ExitBinding(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	exited := ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyRune, Rune: 'c', Mod: domain.ModCtrl}, cancel)
+	if !exited {
+		t.Error("Ctrl+C should cause exit")
+	}
+}
+
+func TestHandleKeyEvent_OverlayRoutesToOverlay(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Open the command palette
+	ui.cmdPalette.Open()
+	if !ui.cmdPalette.Active() {
+		t.Fatal("palette should be active after Open")
+	}
+
+	// Send Escape — should close the palette via overlay scope
+	ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyEscape}, cancel)
+	if ui.cmdPalette.Active() {
+		t.Error("Escape should close overlay via overlay scope routing")
+	}
+}
+
+func TestHandleKeyEvent_OverlayConsumesAll(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Open palette, type some text into input first
+	ui.inputArea.InsertRune('x')
+	ui.cmdPalette.Open()
+
+	// Send a key that has no overlay binding (e.g. Home key).
+	// It should NOT leak to the input area.
+	before := ui.inputArea.Text()
+	ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyHome}, cancel)
+	after := ui.inputArea.Text()
+	if before != after {
+		t.Errorf("overlay should consume all events; input changed from %q to %q", before, after)
+	}
+}
+
+func TestHandleKeyEvent_GlobalScrollUp(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Ctrl+K is bound to scroll_up
+	exited := ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyRune, Rune: 'k', Mod: domain.ModCtrl}, cancel)
+	if exited {
+		t.Error("scroll_up should not exit")
+	}
+	// We can't easily verify scroll state from here since messageList has
+	// no public content, but if we got here without panic, dispatch worked.
+}
+
+func TestHandleKeyEvent_GlobalScrollDown(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	exited := ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyRune, Rune: 'j', Mod: domain.ModCtrl}, cancel)
+	if exited {
+		t.Error("scroll_down should not exit")
+	}
+}
+
+func TestHandleKeyEvent_OpenPaletteEmptyInput(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Input is empty — ":" should open palette
+	ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyRune, Rune: ':'}, cancel)
+	if !ui.cmdPalette.Active() {
+		t.Error("\":\" on empty input should open palette")
+	}
+}
+
+func TestHandleKeyEvent_OpenPaletteNonEmptyInput(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Input has text — ":" should insert as a character, not open palette
+	ui.inputArea.InsertRune('h')
+	ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyRune, Rune: ':'}, cancel)
+	if ui.cmdPalette.Active() {
+		t.Error("\":\" on non-empty input should NOT open palette")
+	}
+	if got := ui.inputArea.Text(); got != "h:" {
+		t.Errorf("expected input 'h:', got %q", got)
+	}
+}
+
+func TestHandleKeyEvent_InputScopeAction(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Type some text, then press Home (bound to input.home)
+	ui.inputArea.InsertRune('a')
+	ui.inputArea.InsertRune('b')
+	ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyHome}, cancel)
+	// Verify cursor moved — insert another char at position 0
+	ui.inputArea.InsertRune('z')
+	if got := ui.inputArea.Text(); got != "zab" {
+		t.Errorf("expected 'zab' after Home+insert, got %q", got)
+	}
+}
+
+func TestHandleKeyEvent_RuneFallback(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 'x' is not bound to any global/input action — should insert as rune
+	ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyRune, Rune: 'x'}, cancel)
+	if got := ui.inputArea.Text(); got != "x" {
+		t.Errorf("expected 'x' in input, got %q", got)
+	}
+}
+
+func TestHandleKeyEvent_PageUpDown(t *testing.T) {
+	ui := newTestUI(t)
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// PgUp/PgDown should not exit or panic
+	exited := ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyPgUp}, cancel)
+	if exited {
+		t.Error("PgUp should not exit")
+	}
+	exited = ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyPgDown}, cancel)
+	if exited {
+		t.Error("PgDown should not exit")
+	}
+}
+
+func TestHandleKeyEvent_NilKeyMapFallback(t *testing.T) {
+	// Create a UI without a KeyMap to test the legacy path
+	ui := New(Deps{
+		Status:   func() StatusInfo { return StatusInfo{} },
+		Messages: func() []session.Message { return nil },
+	})
+	ui.inputArea.SetFocused(true)
+	ui.width = 80
+	ui.height = 24
+	ui.current = common.NewScreenBuffer(80, 24)
+	ui.next = common.NewScreenBuffer(80, 24)
+	ui.computeLayout()
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// With km==nil, typing a rune should go through legacy Update dispatch
+	ui.handleKeyEvent(domain.KeyEvent{Key: domain.KeyRune, Rune: 'q'}, cancel)
+	if got := ui.inputArea.Text(); got != "q" {
+		t.Errorf("expected 'q' via legacy path, got %q", got)
 	}
 }

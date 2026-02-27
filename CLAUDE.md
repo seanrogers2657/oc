@@ -19,9 +19,11 @@ Hexagonal architecture with consumer-defined port interfaces. `cmd/oc/` is the c
 ### Package Dependency Graph
 
 ```
-cmd/oc/      -> config/, provider/, tool/, session/, event/, tui/common/, tui/custom/
-tui/custom/  -> tui/common/, session/, provider/, event/, markdown/, tool/diff, golang.org/x/term
-tui/common/  -> (stdlib only)
+cmd/oc/      -> config/, provider/, tool/, session/, event/, tui/common/, tui/custom/, domain/, assets/
+tui/custom/  -> tui/common/, domain/, session/, provider/, event/, markdown/, tool/diff, golang.org/x/term
+tui/common/  -> domain/
+domain/      -> (stdlib only)
+assets/      -> (stdlib embed only)
 session/     -> provider/ (domain types), tool/ (Context, Result), event/ (Topic)
 tool/        -> provider/ (ToolDef)
 markdown/    -> (stdlib only)
@@ -37,10 +39,12 @@ No circular dependencies. All behavior flows through port interfaces.
 | Package | Purpose | Key Files |
 |---------|---------|-----------|
 | `cmd/oc/` | Entry point, CLI flags, wires all packages | `main.go` |
+| `domain/` | Foundational types: Key, Mod, KeyEvent, Action, KeyMap | `key.go`, `event.go`, `action.go`, `map.go`, `config.go` |
+| `assets/` | Embedded files shipped with binary | `assets.go`, `keybindings.default.json` |
 | `provider/` | AI model communication (streaming) | `provider.go` (port), `openai.go`, `anthropic.go`, `sse.go` |
 | `session/` | Conversation state, agentic loop | `ports.go`, `session.go`, `loop.go`, `message.go` |
 | `tool/` | Tool interface and implementations | `tool.go` (port), `registry.go`, `bash.go`, `read.go`, `write.go`, `edit.go`, `glob.go`, `grep.go` |
-| `tui/common/` | Reusable TUI toolkit (stdlib-only) | `screen.go`, `ansi.go`, `input.go`, `inputarea.go`, `event.go`, `command.go`, `cmdpalette.go`, `modelpicker.go`, `fuzzy.go`, `text.go` |
+| `tui/common/` | Reusable TUI toolkit | `screen.go`, `ansi.go`, `input.go`, `inputarea.go`, `event.go`, `command.go`, `cmdpalette.go`, `modelpicker.go`, `fuzzy.go`, `text.go` |
 | `tui/custom/` | OC-specific chat UI | `ui.go`, `ports.go`, `messagelist.go`, `statusbar.go`, `layout.go` |
 | `event/` | Decoupled pub/sub event bus | `bus.go` |
 | `markdown/` | Pure markdown-to-styled-text parser | `render.go` |
@@ -78,6 +82,19 @@ InputArea    (bottom, multi-line editor)
 
 Double-buffered rendering: diff current vs desired screen buffer, emit only changed ANSI cells. Mouse tracking enabled (SGR mode) for scroll and text selection.
 
+### Keyboard Action Mapping
+
+Key events flow through a three-scope dispatch system in `handleKeyEvent` (ui.go):
+
+1. **Global scope** — exit, scroll, open_palette, page_up/page_down
+2. **Overlay scope** — when command palette or model picker is active, all events route here (close, confirm, prev, next, backspace, rune insertion). Overlay consumes all events to prevent leaking to input.
+3. **Input scope** — submit, newline, cursor movement, editing actions
+4. **Rune fallback** — unbound printable characters insert into the input area
+
+Key types live exclusively in `domain/` (`Key`, `Mod`, `KeyEvent`, `Action`, `KeyMap`). Modifier keys use a `Mod` bitmask (`uint8`) supporting `ModCtrl`, `ModAlt`, `ModShift` with room for future modifiers (Super, Meta, etc). `tui/common/` imports `domain` directly — no re-exports or type aliases.
+
+Default bindings are in `assets/keybindings.default.json`. Components implement `HandleAction(action)` as the single source of truth; `Update(KeyEvent)` is a thin dispatcher that resolves keys to actions via `resolveInputAction()` or `resolveOverlayAction()`, then delegates.
+
 ## Conventions
 
 - Only external deps: `urfave/cli/v2` (CLI framework), `golang.org/x/term` (raw mode)
@@ -92,7 +109,7 @@ Double-buffered rendering: diff current vs desired screen buffer, emit only chan
 
 ```
 go build ./...          # build
-go test ./...           # run all tests (213 tests across 8 packages)
+go test ./...           # run all tests
 go run ./cmd/oc         # run the application
 ```
 

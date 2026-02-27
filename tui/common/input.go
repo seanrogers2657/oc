@@ -3,6 +3,8 @@ package common
 import (
 	"io"
 	"unicode/utf8"
+
+	"github.com/srogers/oc/domain"
 )
 
 // ReadInput reads raw bytes from r and sends parsed KeyEvents to the events channel.
@@ -30,7 +32,7 @@ func parseInput(data []byte, events chan<- Event) {
 				continue
 			}
 			// Bare escape
-			events <- KeyEvent{Key: KeyEscape}
+			events <- domain.KeyEvent{Key: domain.KeyEscape}
 			i++
 			continue
 		}
@@ -39,34 +41,34 @@ func parseInput(data []byte, events chan<- Event) {
 		if data[i] < 0x20 {
 			switch data[i] {
 			case 0x0d: // CR (Enter)
-				events <- KeyEvent{Key: KeyEnter}
+				events <- domain.KeyEvent{Key: domain.KeyEnter}
 			case 0x0a: // LF (Ctrl+J)
-				events <- KeyEvent{Key: KeyRune, Rune: 'j', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'j', Mod: domain.ModCtrl}
 			case 0x09: // Tab
-				events <- KeyEvent{Key: KeyTab}
+				events <- domain.KeyEvent{Key: domain.KeyTab}
 			case 0x08: // Backspace (some terminals)
-				events <- KeyEvent{Key: KeyBackspace}
+				events <- domain.KeyEvent{Key: domain.KeyBackspace}
 			case 0x03: // Ctrl+C
-				events <- KeyEvent{Key: KeyRune, Rune: 'c', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'c', Mod: domain.ModCtrl}
 			case 0x04: // Ctrl+D
-				events <- KeyEvent{Key: KeyRune, Rune: 'd', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'd', Mod: domain.ModCtrl}
 			case 0x01: // Ctrl+A
-				events <- KeyEvent{Key: KeyRune, Rune: 'a', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'a', Mod: domain.ModCtrl}
 			case 0x05: // Ctrl+E
-				events <- KeyEvent{Key: KeyRune, Rune: 'e', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'e', Mod: domain.ModCtrl}
 			case 0x0b: // Ctrl+K
-				events <- KeyEvent{Key: KeyRune, Rune: 'k', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'k', Mod: domain.ModCtrl}
 			case 0x15: // Ctrl+U
-				events <- KeyEvent{Key: KeyRune, Rune: 'u', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'u', Mod: domain.ModCtrl}
 			case 0x17: // Ctrl+W
-				events <- KeyEvent{Key: KeyRune, Rune: 'w', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'w', Mod: domain.ModCtrl}
 			case 0x0c: // Ctrl+L
-				events <- KeyEvent{Key: KeyRune, Rune: 'l', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'l', Mod: domain.ModCtrl}
 			case 0x1a: // Ctrl+Z
-				events <- KeyEvent{Key: KeyRune, Rune: 'z', Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: 'z', Mod: domain.ModCtrl}
 			default:
 				// Generic Ctrl+letter
-				events <- KeyEvent{Key: KeyRune, Rune: rune('a' + data[i] - 1), Ctrl: true}
+				events <- domain.KeyEvent{Key: domain.KeyRune, Rune: rune('a' + data[i] - 1), Mod: domain.ModCtrl}
 			}
 			i++
 			continue
@@ -74,7 +76,7 @@ func parseInput(data []byte, events chan<- Event) {
 
 		// DEL (backspace on most terminals)
 		if data[i] == 0x7f {
-			events <- KeyEvent{Key: KeyBackspace}
+			events <- domain.KeyEvent{Key: domain.KeyBackspace}
 			i++
 			continue
 		}
@@ -82,7 +84,7 @@ func parseInput(data []byte, events chan<- Event) {
 		// UTF-8 multibyte or ASCII printable
 		r, size := utf8.DecodeRune(data[i:])
 		if r != utf8.RuneError {
-			events <- KeyEvent{Key: KeyRune, Rune: r}
+			events <- domain.KeyEvent{Key: domain.KeyRune, Rune: r}
 			i += size
 		} else {
 			i++ // skip invalid byte
@@ -99,7 +101,7 @@ func parseEscape(data []byte, events chan<- Event) int {
 
 	// Alt+Backspace: ESC followed by DEL (0x7f)
 	if data[1] == 0x7f {
-		events <- KeyEvent{Key: KeyBackspace, Alt: true}
+		events <- domain.KeyEvent{Key: domain.KeyBackspace, Mod: domain.ModAlt}
 		return 2
 	}
 
@@ -107,10 +109,10 @@ func parseEscape(data []byte, events chan<- Event) int {
 	if data[1] >= 0x20 && data[1] < 0x7f && data[1] != '[' && data[1] != 'O' {
 		// Alt+Enter is ESC followed by CR
 		if data[1] == 0x0d {
-			events <- KeyEvent{Key: KeyEnter, Alt: true}
+			events <- domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt}
 			return 2
 		}
-		events <- KeyEvent{Key: KeyRune, Rune: rune(data[1]), Alt: true}
+		events <- domain.KeyEvent{Key: domain.KeyRune, Rune: rune(data[1]), Mod: domain.ModAlt}
 		return 2
 	}
 
@@ -123,10 +125,10 @@ func parseEscape(data []byte, events chan<- Event) int {
 	if data[1] == 'O' && len(data) >= 3 {
 		switch data[2] {
 		case 'H':
-			events <- KeyEvent{Key: KeyHome}
+			events <- domain.KeyEvent{Key: domain.KeyHome}
 			return 3
 		case 'F':
-			events <- KeyEvent{Key: KeyEnd}
+			events <- domain.KeyEvent{Key: domain.KeyEnd}
 			return 3
 		}
 	}
@@ -148,25 +150,25 @@ func parseCSI(data []byte, events chan<- Event) int {
 	// Simple CSI sequences (ESC [ X)
 	switch data[2] {
 	case 'A':
-		events <- KeyEvent{Key: KeyUp}
+		events <- domain.KeyEvent{Key: domain.KeyUp}
 		return 3
 	case 'B':
-		events <- KeyEvent{Key: KeyDown}
+		events <- domain.KeyEvent{Key: domain.KeyDown}
 		return 3
 	case 'C':
-		events <- KeyEvent{Key: KeyRight}
+		events <- domain.KeyEvent{Key: domain.KeyRight}
 		return 3
 	case 'D':
-		events <- KeyEvent{Key: KeyLeft}
+		events <- domain.KeyEvent{Key: domain.KeyLeft}
 		return 3
 	case 'H':
-		events <- KeyEvent{Key: KeyHome}
+		events <- domain.KeyEvent{Key: domain.KeyHome}
 		return 3
 	case 'F':
-		events <- KeyEvent{Key: KeyEnd}
+		events <- domain.KeyEvent{Key: domain.KeyEnd}
 		return 3
 	case 'Z': // Shift+Tab
-		events <- KeyEvent{Key: KeyTab, Alt: true} // use Alt as shift indicator for tab
+		events <- domain.KeyEvent{Key: domain.KeyTab, Mod: domain.ModShift}
 		return 3
 	}
 
@@ -174,13 +176,13 @@ func parseCSI(data []byte, events chan<- Event) int {
 	if len(data) >= 4 && data[3] == '~' {
 		switch data[2] {
 		case '3': // Delete
-			events <- KeyEvent{Key: KeyDelete}
+			events <- domain.KeyEvent{Key: domain.KeyDelete}
 			return 4
 		case '5': // Page Up
-			events <- KeyEvent{Key: KeyPgUp}
+			events <- domain.KeyEvent{Key: domain.KeyPgUp}
 			return 4
 		case '6': // Page Down
-			events <- KeyEvent{Key: KeyPgDown}
+			events <- domain.KeyEvent{Key: domain.KeyPgDown}
 			return 4
 		}
 	}
@@ -188,29 +190,32 @@ func parseCSI(data []byte, events chan<- Event) int {
 	// CSI sequences with modifiers: ESC [ 1 ; M X (where M=modifier, X=direction)
 	if len(data) >= 6 && data[2] == '1' && data[3] == ';' {
 		mod := data[4] - '0'
-		ev := KeyEvent{}
+		ev := domain.KeyEvent{}
 
 		// Modifier bits: 2=Shift, 3=Alt, 4=Shift+Alt, 5=Ctrl, 6=Ctrl+Shift, 7=Ctrl+Alt
 		if mod == 3 || mod == 4 || mod == 7 {
-			ev.Alt = true
+			ev.Mod |= domain.ModAlt
 		}
 		if mod == 5 || mod == 6 || mod == 7 {
-			ev.Ctrl = true
+			ev.Mod |= domain.ModCtrl
+		}
+		if mod == 2 || mod == 4 || mod == 6 {
+			ev.Mod |= domain.ModShift
 		}
 
 		switch data[5] {
 		case 'A':
-			ev.Key = KeyUp
+			ev.Key = domain.KeyUp
 		case 'B':
-			ev.Key = KeyDown
+			ev.Key = domain.KeyDown
 		case 'C':
-			ev.Key = KeyRight
+			ev.Key = domain.KeyRight
 		case 'D':
-			ev.Key = KeyLeft
+			ev.Key = domain.KeyLeft
 		case 'H':
-			ev.Key = KeyHome
+			ev.Key = domain.KeyHome
 		case 'F':
-			ev.Key = KeyEnd
+			ev.Key = domain.KeyEnd
 		default:
 			return 0
 		}
@@ -240,9 +245,9 @@ func parseBracketedPaste(data []byte, events chan<- Event) int {
 			for i < len(content) {
 				r, size := utf8.DecodeRune(content[i:])
 				if r == '\n' || r == '\r' {
-					events <- KeyEvent{Key: KeyEnter, Alt: true} // Alt+Enter = literal newline in paste
+					events <- domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt} // Alt+Enter = literal newline in paste
 				} else if r != utf8.RuneError {
-					events <- KeyEvent{Key: KeyRune, Rune: r}
+					events <- domain.KeyEvent{Key: domain.KeyRune, Rune: r}
 				}
 				i += size
 			}

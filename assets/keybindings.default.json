@@ -1,0 +1,43 @@
+{
+  "bindings": [
+    {"key": "ctrl+c",        "action": "exit",                      "scope": "global"},
+    {"key": "ctrl+k",        "action": "scroll_up",                 "scope": "global"},
+    {"key": "ctrl+j",        "action": "scroll_down",               "scope": "global"},
+    {"key": "pgup",          "action": "page_up",                   "scope": "global"},
+    {"key": "pgdown",        "action": "page_down",                 "scope": "global"},
+    {"key": ":",             "action": "open_palette",              "scope": "global"},
+    {"key": "/",             "action": "open_palette",              "scope": "global"},
+
+    {"key": "escape",        "action": "overlay.close",             "scope": "overlay"},
+    {"key": "enter",         "action": "overlay.confirm",           "scope": "overlay"},
+    {"key": "up",            "action": "overlay.prev",              "scope": "overlay"},
+    {"key": "down",          "action": "overlay.next",              "scope": "overlay"},
+    {"key": "ctrl+p",        "action": "overlay.prev",              "scope": "overlay"},
+    {"key": "ctrl+k",        "action": "overlay.prev",              "scope": "overlay"},
+    {"key": "ctrl+n",        "action": "overlay.next",              "scope": "overlay"},
+    {"key": "ctrl+j",        "action": "overlay.next",              "scope": "overlay"},
+    {"key": "backspace",     "action": "overlay.backspace",         "scope": "overlay"},
+
+    {"key": "enter",         "action": "input.submit",              "scope": "input"},
+    {"key": "alt+enter",     "action": "input.newline",             "scope": "input"},
+    {"key": "alt+backspace", "action": "input.delete_word_backward","scope": "input"},
+    {"key": "ctrl+w",        "action": "input.delete_word_backward","scope": "input"},
+    {"key": "backspace",     "action": "input.backspace",           "scope": "input"},
+    {"key": "delete",        "action": "input.delete",              "scope": "input"},
+    {"key": "left",          "action": "input.cursor_left",         "scope": "input"},
+    {"key": "right",         "action": "input.cursor_right",        "scope": "input"},
+    {"key": "alt+left",      "action": "input.word_left",           "scope": "input"},
+    {"key": "alt+right",     "action": "input.word_right",          "scope": "input"},
+    {"key": "up",            "action": "input.cursor_up",           "scope": "input"},
+    {"key": "down",          "action": "input.cursor_down",         "scope": "input"},
+    {"key": "home",          "action": "input.home",                "scope": "input"},
+    {"key": "end",           "action": "input.end",                 "scope": "input"},
+    {"key": "ctrl+a",        "action": "input.home",                "scope": "input"},
+    {"key": "ctrl+e",        "action": "input.end",                 "scope": "input"},
+    {"key": "ctrl+u",        "action": "input.kill_line_before",    "scope": "input"},
+    {"key": "escape",        "action": "input.clear",               "scope": "input"},
+    {"key": "tab",           "action": "input.tab",                 "scope": "input"},
+    {"key": "alt+b",         "action": "input.word_left",           "scope": "input"},
+    {"key": "alt+f",         "action": "input.word_right",          "scope": "input"}
+  ]
+}

@@ -1,6 +1,10 @@
 package common
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/srogers/oc/domain"
+)
 
 func newTestModelPicker() *ModelPicker {
 	models := []string{"gpt-4o", "gpt-4o-mini", "claude-sonnet", "llama3", "llama3:70b"}
@@ -30,7 +34,7 @@ func TestModelPickerEscapeCloses(t *testing.T) {
 	p := newTestModelPicker()
 	p.Open("gpt-4o")
 
-	dirty, consumed := p.Update(KeyEvent{Key: KeyEscape})
+	dirty, consumed := p.Update(domain.KeyEvent{Key: domain.KeyEscape})
 	if !dirty || !consumed {
 		t.Error("escape should be dirty and consumed")
 	}
@@ -50,7 +54,7 @@ func TestModelPickerEnterSelects(t *testing.T) {
 	p.loading = false
 	p.refilter()
 
-	dirty, consumed := p.Update(KeyEvent{Key: KeyEnter})
+	dirty, consumed := p.Update(domain.KeyEvent{Key: domain.KeyEnter})
 	if !dirty || !consumed {
 		t.Error("enter should be dirty and consumed")
 	}
@@ -74,40 +78,40 @@ func TestModelPickerArrowNavigation(t *testing.T) {
 		t.Fatalf("selected should start at 0, got %d", p.selected)
 	}
 
-	p.Update(KeyEvent{Key: KeyDown})
+	p.Update(domain.KeyEvent{Key: domain.KeyDown})
 	if p.selected != 1 {
 		t.Errorf("selected should be 1 after down, got %d", p.selected)
 	}
 
-	p.Update(KeyEvent{Key: KeyUp})
+	p.Update(domain.KeyEvent{Key: domain.KeyUp})
 	if p.selected != 0 {
 		t.Errorf("selected should be 0 after up, got %d", p.selected)
 	}
 
 	// Ctrl+n/p navigation
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'n', Ctrl: true})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'n', Mod: domain.ModCtrl})
 	if p.selected != 1 {
 		t.Errorf("selected should be 1 after ctrl+n, got %d", p.selected)
 	}
 
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'p', Ctrl: true})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'p', Mod: domain.ModCtrl})
 	if p.selected != 0 {
 		t.Errorf("selected should be 0 after ctrl+p, got %d", p.selected)
 	}
 
 	// Ctrl+j/k navigation
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'j', Ctrl: true})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'j', Mod: domain.ModCtrl})
 	if p.selected != 1 {
 		t.Errorf("selected should be 1 after ctrl+j, got %d", p.selected)
 	}
 
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'k', Ctrl: true})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'k', Mod: domain.ModCtrl})
 	if p.selected != 0 {
 		t.Errorf("selected should be 0 after ctrl+k, got %d", p.selected)
 	}
 
 	// Can't go above 0
-	p.Update(KeyEvent{Key: KeyUp})
+	p.Update(domain.KeyEvent{Key: domain.KeyUp})
 	if p.selected != 0 {
 		t.Errorf("selected should stay 0 at top, got %d", p.selected)
 	}
@@ -121,9 +125,9 @@ func TestModelPickerFiltering(t *testing.T) {
 	p.refilter()
 
 	// Type "gpt" - should match gpt models
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'g'})
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'p'})
-	p.Update(KeyEvent{Key: KeyRune, Rune: 't'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'g'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'p'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 't'})
 
 	if len(p.filtered) != 2 {
 		t.Fatalf("expected 2 matches for 'gpt', got %d", len(p.filtered))
@@ -134,7 +138,7 @@ func TestModelPickerBackspaceOnEmptyCloses(t *testing.T) {
 	p := newTestModelPicker()
 	p.Open("gpt-4o")
 
-	dirty, consumed := p.Update(KeyEvent{Key: KeyBackspace})
+	dirty, consumed := p.Update(domain.KeyEvent{Key: domain.KeyBackspace})
 	if !dirty || !consumed {
 		t.Error("backspace on empty should be dirty and consumed")
 	}
@@ -150,14 +154,14 @@ func TestModelPickerBackspaceDeletesChar(t *testing.T) {
 	p.loading = false
 	p.refilter()
 
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'g'})
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'p'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'g'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'p'})
 
 	if string(p.input) != "gp" {
 		t.Fatalf("input should be 'gp', got %q", string(p.input))
 	}
 
-	p.Update(KeyEvent{Key: KeyBackspace})
+	p.Update(domain.KeyEvent{Key: domain.KeyBackspace})
 	if string(p.input) != "g" {
 		t.Errorf("input should be 'g' after backspace, got %q", string(p.input))
 	}
@@ -188,7 +192,9 @@ func TestModelPickerRender(t *testing.T) {
 
 func TestModelPickerRenderCurrentModelMarker(t *testing.T) {
 	p := newTestModelPicker()
-	p.Open("gpt-4o")
+	// Set state directly to avoid race with Open's background goroutine.
+	p.active = true
+	p.currentModel = "gpt-4o"
 	p.models = []string{"gpt-4o", "claude-sonnet"}
 	p.loading = false
 	p.refilter()
@@ -244,9 +250,9 @@ func TestModelPickerRenderNoResults(t *testing.T) {
 	p.refilter()
 
 	// Type something that won't match
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'z'})
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'z'})
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'z'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'z'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'z'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'z'})
 
 	if len(p.filtered) != 0 {
 		t.Fatalf("expected 0 matches, got %d", len(p.filtered))
@@ -266,20 +272,20 @@ func TestModelPickerSelectedClamped(t *testing.T) {
 	p.refilter()
 
 	// Select last item
-	p.Update(KeyEvent{Key: KeyDown})
-	p.Update(KeyEvent{Key: KeyDown})
+	p.Update(domain.KeyEvent{Key: domain.KeyDown})
+	p.Update(domain.KeyEvent{Key: domain.KeyDown})
 	if p.selected != 2 {
 		t.Fatalf("selected should be 2, got %d", p.selected)
 	}
 
 	// Can't go past last
-	p.Update(KeyEvent{Key: KeyDown})
+	p.Update(domain.KeyEvent{Key: domain.KeyDown})
 	if p.selected != 2 {
 		t.Errorf("selected should stay at 2, got %d", p.selected)
 	}
 
 	// Filter to fewer items — selected should be clamped
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'a'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'a'})
 	if p.selected >= len(p.filtered) && len(p.filtered) > 0 {
 		t.Errorf("selected %d should be < filtered count %d", p.selected, len(p.filtered))
 	}
@@ -290,7 +296,7 @@ func TestModelPickerUnconsumedKeys(t *testing.T) {
 	p.Open("")
 
 	// Keys that shouldn't be consumed
-	dirty, consumed := p.Update(KeyEvent{Key: KeyRune, Rune: 'x', Ctrl: true})
+	dirty, consumed := p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'x', Mod: domain.ModCtrl})
 	if consumed {
 		t.Error("ctrl+x should not be consumed")
 	}

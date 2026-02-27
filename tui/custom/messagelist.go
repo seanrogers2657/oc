@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/srogers/oc/domain"
 	"github.com/srogers/oc/event"
 	"github.com/srogers/oc/markdown"
 	"github.com/srogers/oc/provider"
@@ -54,14 +55,14 @@ func (ml *MessageList) ScrollDown(n int) {
 // Update handles events. Returns true if redraw needed.
 func (ml *MessageList) Update(ev common.Event) bool {
 	switch e := ev.(type) {
-	case common.KeyEvent:
+	case domain.KeyEvent:
 		// Scroll with PgUp/PgDown
 		switch e.Key {
-		case common.KeyPgUp:
+		case domain.KeyPgUp:
 			ml.scroll.ScrollUp(ml.scroll.ViewportHeight / 2)
 			ml.autoScroll = false
 			return true
-		case common.KeyPgDown:
+		case domain.KeyPgDown:
 			ml.scroll.ScrollDown(ml.scroll.ViewportHeight / 2)
 			if ml.scroll.AtBottom() {
 				ml.autoScroll = true

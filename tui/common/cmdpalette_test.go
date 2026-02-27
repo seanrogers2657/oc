@@ -1,6 +1,10 @@
 package common
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/srogers/oc/domain"
+)
 
 func newTestRegistry() *CommandRegistry {
 	reg := NewCommandRegistry()
@@ -35,7 +39,7 @@ func TestCommandPaletteEscapeCloses(t *testing.T) {
 	p := NewCommandPalette(newTestRegistry())
 	p.Open()
 
-	dirty, consumed := p.Update(KeyEvent{Key: KeyEscape})
+	dirty, consumed := p.Update(domain.KeyEvent{Key: domain.KeyEscape})
 	if !dirty || !consumed {
 		t.Error("escape should be dirty and consumed")
 	}
@@ -55,7 +59,7 @@ func TestCommandPaletteEnterExecutes(t *testing.T) {
 	p := NewCommandPalette(reg)
 	p.Open()
 
-	dirty, consumed := p.Update(KeyEvent{Key: KeyEnter})
+	dirty, consumed := p.Update(domain.KeyEvent{Key: domain.KeyEnter})
 	if !dirty || !consumed {
 		t.Error("enter should be dirty and consumed")
 	}
@@ -75,40 +79,40 @@ func TestCommandPaletteArrowNavigation(t *testing.T) {
 		t.Fatalf("selected should start at 0, got %d", p.selected)
 	}
 
-	p.Update(KeyEvent{Key: KeyDown})
+	p.Update(domain.KeyEvent{Key: domain.KeyDown})
 	if p.selected != 1 {
 		t.Errorf("selected should be 1 after down, got %d", p.selected)
 	}
 
-	p.Update(KeyEvent{Key: KeyUp})
+	p.Update(domain.KeyEvent{Key: domain.KeyUp})
 	if p.selected != 0 {
 		t.Errorf("selected should be 0 after up, got %d", p.selected)
 	}
 
 	// Ctrl+n/p navigation
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'n', Ctrl: true})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'n', Mod: domain.ModCtrl})
 	if p.selected != 1 {
 		t.Errorf("selected should be 1 after ctrl+n, got %d", p.selected)
 	}
 
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'p', Ctrl: true})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'p', Mod: domain.ModCtrl})
 	if p.selected != 0 {
 		t.Errorf("selected should be 0 after ctrl+p, got %d", p.selected)
 	}
 
 	// Ctrl+j/k navigation
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'j', Ctrl: true})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'j', Mod: domain.ModCtrl})
 	if p.selected != 1 {
 		t.Errorf("selected should be 1 after ctrl+j, got %d", p.selected)
 	}
 
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'k', Ctrl: true})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'k', Mod: domain.ModCtrl})
 	if p.selected != 0 {
 		t.Errorf("selected should be 0 after ctrl+k, got %d", p.selected)
 	}
 
 	// Can't go above 0
-	p.Update(KeyEvent{Key: KeyUp})
+	p.Update(domain.KeyEvent{Key: domain.KeyUp})
 	if p.selected != 0 {
 		t.Errorf("selected should stay 0 at top, got %d", p.selected)
 	}
@@ -119,8 +123,8 @@ func TestCommandPaletteFiltering(t *testing.T) {
 	p.Open()
 
 	// Type "cl" - should match "clear" and possibly others
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'c'})
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'l'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'c'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'l'})
 
 	if len(p.filtered) == 0 {
 		t.Fatal("expected at least one match for 'cl'")
@@ -134,7 +138,7 @@ func TestCommandPaletteBackspaceOnEmptyCloses(t *testing.T) {
 	p := NewCommandPalette(newTestRegistry())
 	p.Open()
 
-	dirty, consumed := p.Update(KeyEvent{Key: KeyBackspace})
+	dirty, consumed := p.Update(domain.KeyEvent{Key: domain.KeyBackspace})
 	if !dirty || !consumed {
 		t.Error("backspace on empty should be dirty and consumed")
 	}
@@ -147,14 +151,14 @@ func TestCommandPaletteBackspaceDeletesChar(t *testing.T) {
 	p := NewCommandPalette(newTestRegistry())
 	p.Open()
 
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'c'})
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'l'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'c'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'l'})
 
 	if string(p.input) != "cl" {
 		t.Fatalf("input should be 'cl', got %q", string(p.input))
 	}
 
-	p.Update(KeyEvent{Key: KeyBackspace})
+	p.Update(domain.KeyEvent{Key: domain.KeyBackspace})
 	if string(p.input) != "c" {
 		t.Errorf("input should be 'c' after backspace, got %q", string(p.input))
 	}
@@ -185,7 +189,7 @@ func TestCommandPaletteAliasMatch(t *testing.T) {
 	p.Open()
 
 	// Type "q" - should match "exit" via its "q" alias
-	p.Update(KeyEvent{Key: KeyRune, Rune: 'q'})
+	p.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'q'})
 
 	found := false
 	for _, cmd := range p.filtered {

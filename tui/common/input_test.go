@@ -1,6 +1,10 @@
 package common
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/srogers/oc/domain"
+)
 
 // collectEvents feeds data through parseInput and collects all events.
 func collectEvents(data []byte) []Event {
@@ -14,14 +18,14 @@ func collectEvents(data []byte) []Event {
 	return events
 }
 
-func expectKey(t *testing.T, events []Event, idx int, key Key) {
+func expectKey(t *testing.T, events []Event, idx int, key domain.Key) {
 	t.Helper()
 	if idx >= len(events) {
 		t.Fatalf("expected event at index %d, only got %d events", idx, len(events))
 	}
-	ke, ok := events[idx].(KeyEvent)
+	ke, ok := events[idx].(domain.KeyEvent)
 	if !ok {
-		t.Fatalf("event %d: expected KeyEvent, got %T", idx, events[idx])
+		t.Fatalf("event %d: expected domain.KeyEvent, got %T", idx, events[idx])
 	}
 	if ke.Key != key {
 		t.Fatalf("event %d: key = %d, want %d", idx, ke.Key, key)
@@ -33,12 +37,12 @@ func expectRune(t *testing.T, events []Event, idx int, r rune) {
 	if idx >= len(events) {
 		t.Fatalf("expected event at index %d, only got %d events", idx, len(events))
 	}
-	ke, ok := events[idx].(KeyEvent)
+	ke, ok := events[idx].(domain.KeyEvent)
 	if !ok {
-		t.Fatalf("event %d: expected KeyEvent, got %T", idx, events[idx])
+		t.Fatalf("event %d: expected domain.KeyEvent, got %T", idx, events[idx])
 	}
-	if ke.Key != KeyRune {
-		t.Fatalf("event %d: key = %d, want KeyRune", idx, ke.Key)
+	if ke.Key != domain.KeyRune {
+		t.Fatalf("event %d: key = %d, want domain.KeyRune", idx, ke.Key)
 	}
 	if ke.Rune != r {
 		t.Fatalf("event %d: rune = %q, want %q", idx, ke.Rune, r)
@@ -50,11 +54,11 @@ func expectCtrl(t *testing.T, events []Event, idx int, r rune) {
 	if idx >= len(events) {
 		t.Fatalf("expected event at index %d, only got %d events", idx, len(events))
 	}
-	ke, ok := events[idx].(KeyEvent)
+	ke, ok := events[idx].(domain.KeyEvent)
 	if !ok {
-		t.Fatalf("event %d: expected KeyEvent, got %T", idx, events[idx])
+		t.Fatalf("event %d: expected domain.KeyEvent, got %T", idx, events[idx])
 	}
-	if !ke.Ctrl {
+	if !ke.Mod.Has(domain.ModCtrl) {
 		t.Fatalf("event %d: expected Ctrl modifier", idx)
 	}
 	if ke.Rune != r {
@@ -97,7 +101,7 @@ func TestInputEnter(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	expectKey(t, events, 0, KeyEnter)
+	expectKey(t, events, 0, domain.KeyEnter)
 
 }
 
@@ -106,7 +110,7 @@ func TestInputTab(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	expectKey(t, events, 0, KeyTab)
+	expectKey(t, events, 0, domain.KeyTab)
 }
 
 func TestInputBackspace(t *testing.T) {
@@ -114,10 +118,10 @@ func TestInputBackspace(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	expectKey(t, events, 0, KeyBackspace)
+	expectKey(t, events, 0, domain.KeyBackspace)
 
 	events = collectEvents([]byte{0x08})
-	expectKey(t, events, 0, KeyBackspace)
+	expectKey(t, events, 0, domain.KeyBackspace)
 }
 
 func TestInputCtrlC(t *testing.T) {
@@ -170,12 +174,12 @@ func TestInputArrowKeys(t *testing.T) {
 	tests := []struct {
 		name string
 		data []byte
-		key  Key
+		key  domain.Key
 	}{
-		{"Up", []byte{0x1b, '[', 'A'}, KeyUp},
-		{"Down", []byte{0x1b, '[', 'B'}, KeyDown},
-		{"Right", []byte{0x1b, '[', 'C'}, KeyRight},
-		{"Left", []byte{0x1b, '[', 'D'}, KeyLeft},
+		{"Up", []byte{0x1b, '[', 'A'}, domain.KeyUp},
+		{"Down", []byte{0x1b, '[', 'B'}, domain.KeyDown},
+		{"Right", []byte{0x1b, '[', 'C'}, domain.KeyRight},
+		{"Left", []byte{0x1b, '[', 'D'}, domain.KeyLeft},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -191,17 +195,17 @@ func TestInputArrowKeys(t *testing.T) {
 func TestInputHomeEnd(t *testing.T) {
 	// CSI H / CSI F
 	events := collectEvents([]byte{0x1b, '[', 'H'})
-	expectKey(t, events, 0, KeyHome)
+	expectKey(t, events, 0, domain.KeyHome)
 
 	events = collectEvents([]byte{0x1b, '[', 'F'})
-	expectKey(t, events, 0, KeyEnd)
+	expectKey(t, events, 0, domain.KeyEnd)
 
 	// SS3 H / SS3 F
 	events = collectEvents([]byte{0x1b, 'O', 'H'})
-	expectKey(t, events, 0, KeyHome)
+	expectKey(t, events, 0, domain.KeyHome)
 
 	events = collectEvents([]byte{0x1b, 'O', 'F'})
-	expectKey(t, events, 0, KeyEnd)
+	expectKey(t, events, 0, domain.KeyEnd)
 }
 
 func TestInputDelete(t *testing.T) {
@@ -209,15 +213,15 @@ func TestInputDelete(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	expectKey(t, events, 0, KeyDelete)
+	expectKey(t, events, 0, domain.KeyDelete)
 }
 
 func TestInputPageUpDown(t *testing.T) {
 	events := collectEvents([]byte{0x1b, '[', '5', '~'})
-	expectKey(t, events, 0, KeyPgUp)
+	expectKey(t, events, 0, domain.KeyPgUp)
 
 	events = collectEvents([]byte{0x1b, '[', '6', '~'})
-	expectKey(t, events, 0, KeyPgDown)
+	expectKey(t, events, 0, domain.KeyPgDown)
 }
 
 func TestInputEscape(t *testing.T) {
@@ -226,7 +230,7 @@ func TestInputEscape(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	expectKey(t, events, 0, KeyEscape)
+	expectKey(t, events, 0, domain.KeyEscape)
 }
 
 func TestInputAltBackspace(t *testing.T) {
@@ -235,8 +239,8 @@ func TestInputAltBackspace(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	ke := events[0].(KeyEvent)
-	if ke.Key != KeyBackspace || !ke.Alt {
+	ke := events[0].(domain.KeyEvent)
+	if ke.Key != domain.KeyBackspace || !ke.Mod.Has(domain.ModAlt) {
 		t.Fatalf("expected Alt+Backspace, got %+v", ke)
 	}
 }
@@ -246,8 +250,8 @@ func TestInputAltLetter(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	ke := events[0].(KeyEvent)
-	if !ke.Alt || ke.Rune != 'x' {
+	ke := events[0].(domain.KeyEvent)
+	if !ke.Mod.Has(domain.ModAlt) || ke.Rune != 'x' {
 		t.Fatalf("expected Alt+x, got %+v", ke)
 	}
 }
@@ -258,15 +262,15 @@ func TestInputModifiedArrows(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	ke := events[0].(KeyEvent)
-	if ke.Key != KeyUp || !ke.Ctrl {
+	ke := events[0].(domain.KeyEvent)
+	if ke.Key != domain.KeyUp || !ke.Mod.Has(domain.ModCtrl) {
 		t.Fatalf("expected Ctrl+Up, got %+v", ke)
 	}
 
 	// Alt+Left: ESC [ 1 ; 3 D
 	events = collectEvents([]byte{0x1b, '[', '1', ';', '3', 'D'})
-	ke = events[0].(KeyEvent)
-	if ke.Key != KeyLeft || !ke.Alt {
+	ke = events[0].(domain.KeyEvent)
+	if ke.Key != domain.KeyLeft || !ke.Mod.Has(domain.ModAlt) {
 		t.Fatalf("expected Alt+Left, got %+v", ke)
 	}
 }
@@ -279,7 +283,7 @@ func TestInputMixed(t *testing.T) {
 		t.Fatalf("expected 3 events, got %d", len(events))
 	}
 	expectRune(t, events, 0, 'a')
-	expectKey(t, events, 1, KeyUp)
+	expectKey(t, events, 1, domain.KeyUp)
 	expectRune(t, events, 2, 'b')
 }
 
@@ -309,8 +313,8 @@ func TestInputBracketedPasteWithNewline(t *testing.T) {
 	}
 	expectRune(t, events, 0, 'a')
 	// Middle event should be Alt+Enter
-	ke := events[1].(KeyEvent)
-	if ke.Key != KeyEnter || !ke.Alt {
+	ke := events[1].(domain.KeyEvent)
+	if ke.Key != domain.KeyEnter || !ke.Mod.Has(domain.ModAlt) {
 		t.Fatalf("expected Alt+Enter for pasted newline, got %+v", ke)
 	}
 	expectRune(t, events, 2, 'b')

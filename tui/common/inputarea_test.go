@@ -1,6 +1,10 @@
 package common
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/srogers/oc/domain"
+)
 
 func newTestInputArea() *InputArea {
 	ia := NewInputArea()
@@ -10,16 +14,16 @@ func newTestInputArea() *InputArea {
 
 func sendRunes(ia *InputArea, s string) {
 	for _, r := range s {
-		ia.Update(KeyEvent{Key: KeyRune, Rune: r})
+		ia.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: r})
 	}
 }
 
-func sendKey(ia *InputArea, key Key) {
-	ia.Update(KeyEvent{Key: key})
+func sendKey(ia *InputArea, key domain.Key) {
+	ia.Update(domain.KeyEvent{Key: key})
 }
 
 func sendCtrl(ia *InputArea, r rune) {
-	ia.Update(KeyEvent{Key: KeyRune, Rune: r, Ctrl: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: r, Mod: domain.ModCtrl})
 }
 
 func TestInputAreaTyping(t *testing.T) {
@@ -37,7 +41,7 @@ func TestInputAreaTyping(t *testing.T) {
 func TestInputAreaNewline(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "line1")
-	ia.Update(KeyEvent{Key: KeyEnter, Alt: true}) // Alt+Enter = newline
+	ia.Update(domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt}) // Alt+Enter = newline
 	sendRunes(ia, "line2")
 
 	if ia.Text() != "line1\nline2" {
@@ -54,7 +58,7 @@ func TestInputAreaSubmit(t *testing.T) {
 	ia.onSubmit = func(text string) { submitted = text }
 
 	sendRunes(ia, "hello world")
-	sendKey(ia, KeyEnter)
+	sendKey(ia, domain.KeyEnter)
 
 	if submitted != "hello world" {
 		t.Fatalf("submitted = %q, want %q", submitted, "hello world")
@@ -70,7 +74,7 @@ func TestInputAreaSubmitEmpty(t *testing.T) {
 	called := false
 	ia.onSubmit = func(text string) { called = true }
 
-	sendKey(ia, KeyEnter) // empty input
+	sendKey(ia, domain.KeyEnter) // empty input
 	if called {
 		t.Fatal("onSubmit should not be called for empty input")
 	}
@@ -82,7 +86,7 @@ func TestInputAreaSubmitWhitespace(t *testing.T) {
 	ia.onSubmit = func(text string) { called = true }
 
 	sendRunes(ia, "   ")
-	sendKey(ia, KeyEnter)
+	sendKey(ia, domain.KeyEnter)
 	if called {
 		t.Fatal("onSubmit should not be called for whitespace-only input")
 	}
@@ -91,7 +95,7 @@ func TestInputAreaSubmitWhitespace(t *testing.T) {
 func TestInputAreaBackspace(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello")
-	sendKey(ia, KeyBackspace)
+	sendKey(ia, domain.KeyBackspace)
 
 	if ia.Text() != "hell" {
 		t.Fatalf("Text() = %q, want %q", ia.Text(), "hell")
@@ -100,7 +104,7 @@ func TestInputAreaBackspace(t *testing.T) {
 
 func TestInputAreaBackspaceAtStart(t *testing.T) {
 	ia := newTestInputArea()
-	sendKey(ia, KeyBackspace) // should not panic
+	sendKey(ia, domain.KeyBackspace) // should not panic
 	if ia.Text() != "" {
 		t.Fatalf("Text() = %q, want empty", ia.Text())
 	}
@@ -109,12 +113,12 @@ func TestInputAreaBackspaceAtStart(t *testing.T) {
 func TestInputAreaBackspaceMergeLines(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello")
-	ia.Update(KeyEvent{Key: KeyEnter, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt})
 	sendRunes(ia, "world")
 
 	// Move to beginning of line 2
 	sendCtrl(ia, 'a')
-	sendKey(ia, KeyBackspace) // merge with line 1
+	sendKey(ia, domain.KeyBackspace) // merge with line 1
 
 	if ia.Text() != "helloworld" {
 		t.Fatalf("Text() = %q, want %q", ia.Text(), "helloworld")
@@ -128,7 +132,7 @@ func TestInputAreaDelete(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello")
 	sendCtrl(ia, 'a') // move to start
-	sendKey(ia, KeyDelete)
+	sendKey(ia, domain.KeyDelete)
 
 	if ia.Text() != "ello" {
 		t.Fatalf("Text() = %q, want %q", ia.Text(), "ello")
@@ -138,13 +142,13 @@ func TestInputAreaDelete(t *testing.T) {
 func TestInputAreaDeleteMergeLines(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello")
-	ia.Update(KeyEvent{Key: KeyEnter, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt})
 	sendRunes(ia, "world")
 
 	// Move to end of line 1
 	ia.cursorY = 0
 	sendCtrl(ia, 'e')
-	sendKey(ia, KeyDelete) // merge with line 2
+	sendKey(ia, domain.KeyDelete) // merge with line 2
 
 	if ia.Text() != "helloworld" {
 		t.Fatalf("Text() = %q, want %q", ia.Text(), "helloworld")
@@ -155,12 +159,12 @@ func TestInputAreaArrowLeftRight(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "abc")
 
-	sendKey(ia, KeyLeft)
+	sendKey(ia, domain.KeyLeft)
 	if ia.cursorX != 2 {
 		t.Fatalf("cursorX = %d, want 2", ia.cursorX)
 	}
 
-	sendKey(ia, KeyRight)
+	sendKey(ia, domain.KeyRight)
 	if ia.cursorX != 3 {
 		t.Fatalf("cursorX = %d, want 3", ia.cursorX)
 	}
@@ -169,12 +173,12 @@ func TestInputAreaArrowLeftRight(t *testing.T) {
 func TestInputAreaArrowLeftWrapToPrevLine(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "abc")
-	ia.Update(KeyEvent{Key: KeyEnter, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt})
 	sendRunes(ia, "de")
 
 	// At start of line 2, go left => end of line 1
 	sendCtrl(ia, 'a')
-	sendKey(ia, KeyLeft)
+	sendKey(ia, domain.KeyLeft)
 	if ia.cursorY != 0 || ia.cursorX != 3 {
 		t.Fatalf("cursor = (%d,%d), want (3,0)", ia.cursorX, ia.cursorY)
 	}
@@ -183,15 +187,15 @@ func TestInputAreaArrowLeftWrapToPrevLine(t *testing.T) {
 func TestInputAreaArrowUpDown(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "line1")
-	ia.Update(KeyEvent{Key: KeyEnter, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt})
 	sendRunes(ia, "line2")
 
-	sendKey(ia, KeyUp)
+	sendKey(ia, domain.KeyUp)
 	if ia.cursorY != 0 {
 		t.Fatalf("cursorY = %d, want 0", ia.cursorY)
 	}
 
-	sendKey(ia, KeyDown)
+	sendKey(ia, domain.KeyDown)
 	if ia.cursorY != 1 {
 		t.Fatalf("cursorY = %d, want 1", ia.cursorY)
 	}
@@ -201,12 +205,12 @@ func TestInputAreaHomeEnd(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello")
 
-	sendKey(ia, KeyHome)
+	sendKey(ia, domain.KeyHome)
 	if ia.cursorX != 0 {
 		t.Fatalf("Home: cursorX = %d, want 0", ia.cursorX)
 	}
 
-	sendKey(ia, KeyEnd)
+	sendKey(ia, domain.KeyEnd)
 	if ia.cursorX != 5 {
 		t.Fatalf("End: cursorX = %d, want 5", ia.cursorX)
 	}
@@ -273,18 +277,18 @@ func TestInputAreaWordMovement(t *testing.T) {
 	sendRunes(ia, "hello world foo")
 
 	// Alt+Left: move word left
-	ia.Update(KeyEvent{Key: KeyLeft, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyLeft, Mod: domain.ModAlt})
 	if ia.cursorX != 12 {
 		t.Fatalf("Alt+Left: cursorX = %d, want 12", ia.cursorX)
 	}
 
-	ia.Update(KeyEvent{Key: KeyLeft, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyLeft, Mod: domain.ModAlt})
 	if ia.cursorX != 6 {
 		t.Fatalf("Alt+Left x2: cursorX = %d, want 6", ia.cursorX)
 	}
 
 	// Alt+Right: move word right
-	ia.Update(KeyEvent{Key: KeyRight, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyRight, Mod: domain.ModAlt})
 	if ia.cursorX != 12 {
 		t.Fatalf("Alt+Right: cursorX = %d, want 12", ia.cursorX)
 	}
@@ -293,11 +297,11 @@ func TestInputAreaWordMovement(t *testing.T) {
 func TestInputAreaAltB(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello world")
-	ia.Update(KeyEvent{Key: KeyRune, Rune: 'b', Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'b', Mod: domain.ModAlt})
 	if ia.cursorX != 6 {
 		t.Fatalf("Alt+B: cursorX = %d, want 6", ia.cursorX)
 	}
-	ia.Update(KeyEvent{Key: KeyRune, Rune: 'b', Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'b', Mod: domain.ModAlt})
 	if ia.cursorX != 0 {
 		t.Fatalf("Alt+B x2: cursorX = %d, want 0", ia.cursorX)
 	}
@@ -307,11 +311,11 @@ func TestInputAreaAltF(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello world")
 	ia.cursorX = 0
-	ia.Update(KeyEvent{Key: KeyRune, Rune: 'f', Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'f', Mod: domain.ModAlt})
 	if ia.cursorX != 6 {
 		t.Fatalf("Alt+F: cursorX = %d, want 6", ia.cursorX)
 	}
-	ia.Update(KeyEvent{Key: KeyRune, Rune: 'f', Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'f', Mod: domain.ModAlt})
 	if ia.cursorX != 11 {
 		t.Fatalf("Alt+F x2: cursorX = %d, want 11", ia.cursorX)
 	}
@@ -320,7 +324,7 @@ func TestInputAreaAltF(t *testing.T) {
 func TestInputAreaEscapeClearsInput(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello world")
-	ia.Update(KeyEvent{Key: KeyEscape})
+	ia.Update(domain.KeyEvent{Key: domain.KeyEscape})
 	if ia.Text() != "" {
 		t.Fatalf("Escape: Text() = %q, want empty", ia.Text())
 	}
@@ -332,7 +336,7 @@ func TestInputAreaEscapeClearsInput(t *testing.T) {
 func TestInputAreaAltBackspace(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hello world")
-	ia.Update(KeyEvent{Key: KeyBackspace, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyBackspace, Mod: domain.ModAlt})
 	if ia.Text() != "hello " {
 		t.Fatalf("Alt+Backspace: Text() = %q, want %q", ia.Text(), "hello ")
 	}
@@ -340,7 +344,7 @@ func TestInputAreaAltBackspace(t *testing.T) {
 
 func TestInputAreaTab(t *testing.T) {
 	ia := newTestInputArea()
-	sendKey(ia, KeyTab)
+	sendKey(ia, domain.KeyTab)
 	if ia.Text() != "    " {
 		t.Fatalf("Tab: Text() = %q, want 4 spaces", ia.Text())
 	}
@@ -349,7 +353,7 @@ func TestInputAreaTab(t *testing.T) {
 func TestInputAreaNotFocused(t *testing.T) {
 	ia := NewInputArea()
 	ia.SetFocused(false)
-	dirty := ia.Update(KeyEvent{Key: KeyRune, Rune: 'a'})
+	dirty := ia.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'a'})
 	if dirty {
 		t.Fatal("unfocused input area should not process events")
 	}
@@ -386,7 +390,7 @@ func TestInputAreaInsertInMiddle(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "hllo")
 	ia.cursorX = 1
-	ia.Update(KeyEvent{Key: KeyRune, Rune: 'e'})
+	ia.Update(domain.KeyEvent{Key: domain.KeyRune, Rune: 'e'})
 
 	if ia.Text() != "hello" {
 		t.Fatalf("Text() = %q, want %q", ia.Text(), "hello")
@@ -400,7 +404,7 @@ func TestInputAreaNewlineInMiddle(t *testing.T) {
 	ia := newTestInputArea()
 	sendRunes(ia, "helloworld")
 	ia.cursorX = 5
-	ia.Update(KeyEvent{Key: KeyEnter, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt})
 
 	if ia.Text() != "hello\nworld" {
 		t.Fatalf("Text() = %q, want %q", ia.Text(), "hello\nworld")
@@ -413,7 +417,7 @@ func TestInputAreaNewlineInMiddle(t *testing.T) {
 // submitText is a helper that types text and presses Enter to submit it.
 func submitText(ia *InputArea, s string) {
 	sendRunes(ia, s)
-	sendKey(ia, KeyEnter)
+	sendKey(ia, domain.KeyEnter)
 }
 
 func TestInputAreaHistoryUp(t *testing.T) {
@@ -424,15 +428,15 @@ func TestInputAreaHistoryUp(t *testing.T) {
 	submitText(ia, "second")
 	submitText(ia, "third")
 
-	sendKey(ia, KeyUp) // -> "third"
+	sendKey(ia, domain.KeyUp) // -> "third"
 	if ia.Text() != "third" {
 		t.Fatalf("Up 1: Text() = %q, want %q", ia.Text(), "third")
 	}
-	sendKey(ia, KeyUp) // -> "second"
+	sendKey(ia, domain.KeyUp) // -> "second"
 	if ia.Text() != "second" {
 		t.Fatalf("Up 2: Text() = %q, want %q", ia.Text(), "second")
 	}
-	sendKey(ia, KeyUp) // -> "first"
+	sendKey(ia, domain.KeyUp) // -> "first"
 	if ia.Text() != "first" {
 		t.Fatalf("Up 3: Text() = %q, want %q", ia.Text(), "first")
 	}
@@ -445,13 +449,13 @@ func TestInputAreaHistoryDown(t *testing.T) {
 	submitText(ia, "first")
 	submitText(ia, "second")
 
-	sendKey(ia, KeyUp) // -> "second"
-	sendKey(ia, KeyUp) // -> "first"
-	sendKey(ia, KeyDown) // -> "second"
+	sendKey(ia, domain.KeyUp) // -> "second"
+	sendKey(ia, domain.KeyUp) // -> "first"
+	sendKey(ia, domain.KeyDown) // -> "second"
 	if ia.Text() != "second" {
 		t.Fatalf("Down: Text() = %q, want %q", ia.Text(), "second")
 	}
-	sendKey(ia, KeyDown) // -> back to empty (draft)
+	sendKey(ia, domain.KeyDown) // -> back to empty (draft)
 	if ia.Text() != "" {
 		t.Fatalf("Down past end: Text() = %q, want empty", ia.Text())
 	}
@@ -465,11 +469,11 @@ func TestInputAreaHistoryDraftPreserved(t *testing.T) {
 
 	// Type partial text without submitting
 	sendRunes(ia, "work in progress")
-	sendKey(ia, KeyUp) // -> "old message"
+	sendKey(ia, domain.KeyUp) // -> "old message"
 	if ia.Text() != "old message" {
 		t.Fatalf("Up: Text() = %q, want %q", ia.Text(), "old message")
 	}
-	sendKey(ia, KeyDown) // -> restore draft
+	sendKey(ia, domain.KeyDown) // -> restore draft
 	if ia.Text() != "work in progress" {
 		t.Fatalf("Down (draft): Text() = %q, want %q", ia.Text(), "work in progress")
 	}
@@ -481,9 +485,9 @@ func TestInputAreaHistoryUpAtBound(t *testing.T) {
 
 	submitText(ia, "only")
 
-	sendKey(ia, KeyUp) // -> "only"
-	sendKey(ia, KeyUp) // -> still "only" (clamped)
-	sendKey(ia, KeyUp) // -> still "only"
+	sendKey(ia, domain.KeyUp) // -> "only"
+	sendKey(ia, domain.KeyUp) // -> still "only" (clamped)
+	sendKey(ia, domain.KeyUp) // -> still "only"
 	if ia.Text() != "only" {
 		t.Fatalf("Up at bound: Text() = %q, want %q", ia.Text(), "only")
 	}
@@ -615,7 +619,7 @@ func TestInputAreaLineCountWrapsMultiLine(t *testing.T) {
 	// 15 chars on line 1, then a newline, then 5 chars on line 2
 	// At width 12 (availWidth=10): line1 = 2 visual lines (10+5), line2 = 1 visual line => 3 total
 	sendRunes(ia, "abcdefghijklmno")
-	ia.Update(KeyEvent{Key: KeyEnter, Alt: true})
+	ia.Update(domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt})
 	sendRunes(ia, "hello")
 	if got := ia.LineCount(12); got != 3 {
 		t.Fatalf("LineCount(12) = %d, want 3", got)
@@ -695,27 +699,27 @@ func TestInputAreaSetHistoryNavigateUp(t *testing.T) {
 	ia.SetHistory([]string{"old1", "old2"})
 
 	// Press Up to navigate pre-loaded history
-	sendKey(ia, KeyUp) // -> "old2"
+	sendKey(ia, domain.KeyUp) // -> "old2"
 	if ia.Text() != "old2" {
 		t.Fatalf("Up 1: Text() = %q, want %q", ia.Text(), "old2")
 	}
-	sendKey(ia, KeyUp) // -> "old1"
+	sendKey(ia, domain.KeyUp) // -> "old1"
 	if ia.Text() != "old1" {
 		t.Fatalf("Up 2: Text() = %q, want %q", ia.Text(), "old1")
 	}
-	sendKey(ia, KeyDown) // -> "old2"
-	sendKey(ia, KeyDown) // -> draft (empty)
+	sendKey(ia, domain.KeyDown) // -> "old2"
+	sendKey(ia, domain.KeyDown) // -> draft (empty)
 	if ia.Text() != "" {
 		t.Fatalf("Down past end: Text() = %q, want empty", ia.Text())
 	}
 
 	// Submit a new entry — it appends to the pre-loaded history
 	submitText(ia, "new1")
-	sendKey(ia, KeyUp) // -> "new1"
+	sendKey(ia, domain.KeyUp) // -> "new1"
 	if ia.Text() != "new1" {
 		t.Fatalf("Up after submit: Text() = %q, want %q", ia.Text(), "new1")
 	}
-	sendKey(ia, KeyUp) // -> "old2"
+	sendKey(ia, domain.KeyUp) // -> "old2"
 	if ia.Text() != "old2" {
 		t.Fatalf("Up to old: Text() = %q, want %q", ia.Text(), "old2")
 	}
@@ -729,11 +733,11 @@ func TestInputAreaHistoryMultiLineUpDown(t *testing.T) {
 
 	// Type multi-line input
 	sendRunes(ia, "line1")
-	ia.Update(KeyEvent{Key: KeyEnter, Alt: true}) // newline
+	ia.Update(domain.KeyEvent{Key: domain.KeyEnter, Mod: domain.ModAlt}) // newline
 	sendRunes(ia, "line2")
 
 	// Cursor is on line 2 (last line). Up should move to line 1, not history.
-	sendKey(ia, KeyUp)
+	sendKey(ia, domain.KeyUp)
 	if ia.cursorY != 0 {
 		t.Fatalf("Up from line2: cursorY = %d, want 0", ia.cursorY)
 	}
@@ -742,19 +746,19 @@ func TestInputAreaHistoryMultiLineUpDown(t *testing.T) {
 	}
 
 	// Now on line 1 (first line). Up should enter history.
-	sendKey(ia, KeyUp)
+	sendKey(ia, domain.KeyUp)
 	if ia.Text() != "previous" {
 		t.Fatalf("Up from line1: Text() = %q, want %q", ia.Text(), "previous")
 	}
 
 	// Down should restore draft (multi-line)
-	sendKey(ia, KeyDown)
+	sendKey(ia, domain.KeyDown)
 	if ia.Text() != "line1\nline2" {
 		t.Fatalf("Down to draft: Text() = %q, want %q", ia.Text(), "line1\nline2")
 	}
 
 	// Cursor should be on last line. Down should be a no-op (already at last line, not in history).
-	sendKey(ia, KeyDown)
+	sendKey(ia, domain.KeyDown)
 	if ia.Text() != "line1\nline2" {
 		t.Fatalf("Down at bottom: Text() = %q, want %q", ia.Text(), "line1\nline2")
 	}

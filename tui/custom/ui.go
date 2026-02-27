@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/srogers/oc/domain"
 	"github.com/srogers/oc/event"
 	"github.com/srogers/oc/tui/common"
 )
@@ -25,6 +26,7 @@ type Deps struct {
 	Commands      *common.CommandRegistry // registered commands for command palette
 	FetchModels   FetchModels             // fetches available models from provider
 	OnModelSelect OnModelSelect           // called when user picks a model
+	KeyMap        *domain.KeyMap          // key binding registry
 }
 
 // UI is the top-level terminal application.
@@ -53,6 +55,9 @@ type UI struct {
 	// Prompt mode state (for tool asking user a question)
 	promptResponse chan<- string // non-nil while awaiting a prompt answer
 
+	// Key bindings
+	keyMap *domain.KeyMap
+
 	// FPS counter
 	showFPS     bool
 	renderCount int
@@ -65,6 +70,7 @@ func New(deps Deps) *UI {
 	t := &UI{
 		events: make(chan common.Event, 64),
 		deps:   deps,
+		keyMap: deps.KeyMap,
 
 		statusBar:   NewStatusBar(deps.Status),
 		messageList: NewMessageList(deps.Messages),
@@ -162,65 +168,8 @@ func (t *UI) Run(ctx context.Context) error {
 // handleEvent processes one event. Returns true if the UI should exit.
 func (t *UI) handleEvent(ev common.Event, cancel context.CancelFunc) bool {
 	switch e := ev.(type) {
-	case common.KeyEvent:
-		// Global keybindings
-		if e.Ctrl && e.Rune == 'c' {
-			cancel()
-			return true
-		}
-
-		// Model picker intercept - when active, it gets ALL keys
-		if t.modelPicker != nil && t.modelPicker.Active() {
-			dirty, consumed := t.modelPicker.Update(e)
-			if consumed {
-				if dirty {
-					t.render()
-				}
-				return false
-			}
-		}
-
-		// Command palette intercept - when active, it gets ALL keys
-		if t.cmdPalette != nil && t.cmdPalette.Active() {
-			dirty, consumed := t.cmdPalette.Update(e)
-			if consumed {
-				if dirty {
-					t.render()
-				}
-				return false
-			}
-		}
-
-		// Trigger command palette: ':' when input is empty and not in prompt mode
-		if t.cmdPalette != nil && e.Key == common.KeyRune && e.Rune == ':' && !t.inputArea.InPromptMode() {
-			if strings.TrimSpace(t.inputArea.Text()) == "" {
-				t.cmdPalette.Open()
-				t.render()
-				return false
-			}
-		}
-
-		// Scroll message list with Ctrl+K (up) / Ctrl+J (down)
-		if e.Ctrl && e.Rune == 'k' {
-			t.messageList.ScrollUp(3)
-			t.render()
-			return false
-		}
-		if e.Ctrl && e.Rune == 'j' {
-			t.messageList.ScrollDown(3)
-			t.render()
-			return false
-		}
-
-		// Forward to all components
-		dirty := t.inputArea.Update(ev)
-		dirty = t.messageList.Update(ev) || dirty
-		dirty = t.statusBar.Update(ev) || dirty
-
-		if dirty {
-			t.computeLayout()
-			t.render()
-		}
+	case domain.KeyEvent:
+		return t.handleKeyEvent(e, cancel)
 
 	case common.ResizeEvent:
 		t.width = e.Width
@@ -283,6 +232,133 @@ func (t *UI) handleEvent(ev common.Event, cancel context.CancelFunc) bool {
 		}
 	}
 
+	return false
+}
+
+// handleKeyEvent processes a key event through the KeyMap dispatch chain.
+// Returns true if the UI should exit.
+func (t *UI) handleKeyEvent(e domain.KeyEvent, cancel context.CancelFunc) bool {
+	km := t.keyMap
+	if km == nil {
+		// No keymap — fall back to legacy Update dispatch
+		dirty := t.inputArea.Update(e)
+		dirty = t.messageList.Update(e) || dirty
+		dirty = t.statusBar.Update(e) || dirty
+		if dirty {
+			t.computeLayout()
+			t.render()
+		}
+		return false
+	}
+
+	// 1. Global exit binding (checked first, always)
+	if action, ok := km.Resolve(domain.KeyScopeGlobal, e); ok && action == domain.ActionExit {
+		cancel()
+		return true
+	}
+
+	// 2. Overlay active? Route to overlay scope
+	overlayActive := (t.modelPicker != nil && t.modelPicker.Active()) ||
+		(t.cmdPalette != nil && t.cmdPalette.Active())
+
+	if overlayActive {
+		if action, ok := km.Resolve(domain.KeyScopeOverlay, e); ok {
+			dirty, consumed := t.dispatchOverlayAction(action)
+			if consumed {
+				if dirty {
+					t.render()
+				}
+				return false
+			}
+		}
+		// No overlay action match — try rune insertion for filter
+		if e.Key == domain.KeyRune && e.Mod == 0 {
+			dirty := t.dispatchOverlayRune(e.Rune)
+			if dirty {
+				t.render()
+			}
+			return false
+		}
+		// Overlay consumes all events
+		return false
+	}
+
+	// 3. Global actions (scroll, open_palette)
+	if action, ok := km.Resolve(domain.KeyScopeGlobal, e); ok {
+		switch action {
+		case domain.ActionScrollUp:
+			t.messageList.ScrollUp(3)
+			t.render()
+			return false
+		case domain.ActionScrollDown:
+			t.messageList.ScrollDown(3)
+			t.render()
+			return false
+		case domain.ActionPageUp:
+			t.messageList.ScrollUp(t.layout.MessageList.Height / 2)
+			t.render()
+			return false
+		case domain.ActionPageDown:
+			t.messageList.ScrollDown(t.layout.MessageList.Height / 2)
+			t.render()
+			return false
+		case domain.ActionOpenPalette:
+			// Guard: only open palette when input is empty and not in prompt mode.
+			// If the guard fails, fall through to input scope — the ":" or "/"
+			// character will be inserted as a normal rune in step 5.
+			if t.cmdPalette != nil && !t.inputArea.InPromptMode() {
+				if strings.TrimSpace(t.inputArea.Text()) == "" {
+					t.cmdPalette.Open()
+					t.render()
+					return false
+				}
+			}
+		}
+	}
+
+	// 4. Input scope actions
+	if action, ok := km.Resolve(domain.KeyScopeInput, e); ok {
+		if t.inputArea.HandleAction(action) {
+			t.computeLayout()
+			t.render()
+		}
+		return false
+	}
+
+	// 5. Fallback: printable rune → InputArea
+	if e.Key == domain.KeyRune && e.Mod == 0 {
+		if t.inputArea.InsertRune(e.Rune) {
+			t.computeLayout()
+			t.render()
+		}
+		return false
+	}
+
+	return false
+}
+
+// dispatchOverlayAction sends an action to the active overlay.
+// Returns (dirty, consumed).
+func (t *UI) dispatchOverlayAction(action domain.Action) (bool, bool) {
+	if t.modelPicker != nil && t.modelPicker.Active() {
+		return t.modelPicker.HandleAction(action)
+	}
+	if t.cmdPalette != nil && t.cmdPalette.Active() {
+		return t.cmdPalette.HandleAction(action)
+	}
+	return false, false
+}
+
+// dispatchOverlayRune sends a typed character to the active overlay filter.
+func (t *UI) dispatchOverlayRune(r rune) bool {
+	if t.modelPicker != nil && t.modelPicker.Active() {
+		dirty, _ := t.modelPicker.InsertRune(r)
+		return dirty
+	}
+	if t.cmdPalette != nil && t.cmdPalette.Active() {
+		dirty, _ := t.cmdPalette.InsertRune(r)
+		return dirty
+	}
 	return false
 }
 

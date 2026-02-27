@@ -3,6 +3,8 @@ package common
 import (
 	"strings"
 	"unicode/utf8"
+
+	"github.com/srogers/oc/domain"
 )
 
 // InputArea is a multi-line text editor component.
@@ -34,7 +36,7 @@ func NewInputArea() *InputArea {
 		lines:      [][]rune{{}},
 		historyIdx: -1,
 		prompt:     "> ",
-		hintText:   "Enter=send  Alt+Enter=newline  :=commands  C-j/k=scroll  C-c=exit",
+		hintText:   "Enter=send  Alt+Enter=newline  : /=commands  C-j/k=scroll  C-c=exit",
 	}
 }
 
@@ -162,142 +164,71 @@ func (ia *InputArea) SetFocused(f bool) { ia.focused = f }
 // MinSize returns the minimum size.
 func (ia *InputArea) MinSize() (int, int) { return 10, 4 }
 
-// Update handles keyboard events.
+// Update handles keyboard events. It resolves the key to an action and
+// delegates to HandleAction / InsertRune.
 func (ia *InputArea) Update(ev Event) bool {
-	if !ia.focused {
+	ke, ok := ev.(domain.KeyEvent)
+	if !ok || !ia.focused {
 		return false
 	}
-
-	ke, ok := ev.(KeyEvent)
-	if !ok {
-		return false
+	if action, ok := resolveInputAction(ke); ok {
+		return ia.HandleAction(action)
 	}
-
-	switch {
-	// Submit: Enter (without modifiers)
-	case ke.Key == KeyEnter && !ke.Alt && !ke.Ctrl:
-		text := ia.Text()
-		if strings.TrimSpace(text) == "" {
-			return false
-		}
-		ia.history = append(ia.history, text)
-		ia.historyIdx = -1
-		ia.draft = ""
-		if ia.onSubmit != nil {
-			ia.onSubmit(text)
-		}
-		ia.Clear()
-		return true
-
-	// Newline: Alt+Enter
-	case ke.Key == KeyEnter && ke.Alt:
-		ia.insertNewline()
-		return true
-
-	// Alt+Backspace: delete word backward
-	case ke.Key == KeyBackspace && ke.Alt:
-		ia.deleteWordBackward()
-		return true
-
-	// Backspace
-	case ke.Key == KeyBackspace:
-		ia.backspace()
-		return true
-
-	// Delete
-	case ke.Key == KeyDelete:
-		ia.delete()
-		return true
-
-	// Arrow keys
-	case ke.Key == KeyLeft:
-		if ke.Alt {
-			ia.moveWordLeft()
-		} else {
-			ia.moveLeft()
-		}
-		return true
-	case ke.Key == KeyRight:
-		if ke.Alt {
-			ia.moveWordRight()
-		} else {
-			ia.moveRight()
-		}
-		return true
-	case ke.Key == KeyUp:
-		if ia.cursorY == 0 {
-			ia.historyBack()
-		} else {
-			ia.moveUp()
-		}
-		return true
-	case ke.Key == KeyDown:
-		if ia.cursorY == len(ia.lines)-1 {
-			ia.historyForward()
-		} else {
-			ia.moveDown()
-		}
-		return true
-
-	// Home/End
-	case ke.Key == KeyHome:
-		ia.cursorX = 0
-		return true
-	case ke.Key == KeyEnd:
-		ia.cursorX = len(ia.lines[ia.cursorY])
-		return true
-
-	// Escape: clear input
-	case ke.Key == KeyEscape:
-		ia.Clear()
-		return true
-
-	// Alt+letter bindings
-	case ke.Key == KeyRune && ke.Alt:
-		switch ke.Rune {
-		case 'b': // back a word
-			ia.moveWordLeft()
-			return true
-		case 'f': // forward a word
-			ia.moveWordRight()
-			return true
-		}
-		return false
-
-	// Ctrl bindings
-	case ke.Ctrl:
-		switch ke.Rune {
-		case 'a': // beginning of line
-			ia.cursorX = 0
-			return true
-		case 'e': // end of line
-			ia.cursorX = len(ia.lines[ia.cursorY])
-			return true
-		case 'u': // clear line before cursor
-			ia.lines[ia.cursorY] = ia.lines[ia.cursorY][ia.cursorX:]
-			ia.cursorX = 0
-			return true
-		case 'w': // delete word backward
-			ia.deleteWordBackward()
-			return true
-		}
-		return false
-
-	// Tab
-	case ke.Key == KeyTab:
-		// Insert spaces for tab
-		for i := 0; i < 4; i++ {
-			ia.insertRune(' ')
-		}
-		return true
-
-	// Printable character
-	case ke.Key == KeyRune:
-		ia.insertRune(ke.Rune)
-		return true
+	if ke.Key == domain.KeyRune && ke.Mod == 0 {
+		return ia.InsertRune(ke.Rune)
 	}
-
 	return false
+}
+
+// resolveInputAction maps a key event to an input action using the same
+// hardcoded rules that existed before the KeyMap system. This is used by
+// Update() for backward compatibility when no KeyMap is present.
+func resolveInputAction(ke domain.KeyEvent) (domain.Action, bool) {
+	switch {
+	case ke.Key == domain.KeyEnter && ke.Mod == 0:
+		return domain.ActionSubmit, true
+	case ke.Key == domain.KeyEnter && ke.Mod.Has(domain.ModAlt):
+		return domain.ActionNewline, true
+	case ke.Key == domain.KeyBackspace && ke.Mod.Has(domain.ModAlt):
+		return domain.ActionDeleteWordBackward, true
+	case ke.Key == domain.KeyBackspace:
+		return domain.ActionBackspace, true
+	case ke.Key == domain.KeyDelete:
+		return domain.ActionDelete, true
+	case ke.Key == domain.KeyLeft && ke.Mod.Has(domain.ModAlt):
+		return domain.ActionWordLeft, true
+	case ke.Key == domain.KeyLeft:
+		return domain.ActionCursorLeft, true
+	case ke.Key == domain.KeyRight && ke.Mod.Has(domain.ModAlt):
+		return domain.ActionWordRight, true
+	case ke.Key == domain.KeyRight:
+		return domain.ActionCursorRight, true
+	case ke.Key == domain.KeyUp:
+		return domain.ActionCursorUp, true
+	case ke.Key == domain.KeyDown:
+		return domain.ActionCursorDown, true
+	case ke.Key == domain.KeyHome:
+		return domain.ActionHome, true
+	case ke.Key == domain.KeyEnd:
+		return domain.ActionEnd, true
+	case ke.Key == domain.KeyEscape:
+		return domain.ActionClearInput, true
+	case ke.Key == domain.KeyRune && ke.Mod.Has(domain.ModAlt) && ke.Rune == 'b':
+		return domain.ActionWordLeft, true
+	case ke.Key == domain.KeyRune && ke.Mod.Has(domain.ModAlt) && ke.Rune == 'f':
+		return domain.ActionWordRight, true
+	case ke.Mod.Has(domain.ModCtrl) && ke.Rune == 'a':
+		return domain.ActionHome, true
+	case ke.Mod.Has(domain.ModCtrl) && ke.Rune == 'e':
+		return domain.ActionEnd, true
+	case ke.Mod.Has(domain.ModCtrl) && ke.Rune == 'u':
+		return domain.ActionKillLineBefore, true
+	case ke.Mod.Has(domain.ModCtrl) && ke.Rune == 'w':
+		return domain.ActionDeleteWordBackward, true
+	case ke.Key == domain.KeyTab:
+		return domain.ActionInsertTab, true
+	}
+	return "", false
 }
 
 // Render draws the input area.
@@ -413,7 +344,7 @@ func (ia *InputArea) SetPromptMode(on bool, question string) {
 		ia.hintText = "Enter=answer"
 	} else {
 		ia.prompt = "> "
-		ia.hintText = "Enter=send  Alt+Enter=newline  :=commands  C-j/k=scroll  C-c=exit"
+		ia.hintText = "Enter=send  Alt+Enter=newline  : /=commands  C-j/k=scroll  C-c=exit"
 	}
 }
 
@@ -425,6 +356,94 @@ func (ia *InputArea) SetOnSubmit(fn func(string)) {
 // InPromptMode returns whether the input area is in prompt mode.
 func (ia *InputArea) InPromptMode() bool {
 	return ia.promptMode
+}
+
+// HandleAction responds to a resolved action. Returns true if the component needs redraw.
+func (ia *InputArea) HandleAction(action domain.Action) bool {
+	if !ia.focused {
+		return false
+	}
+	switch action {
+	case domain.ActionSubmit:
+		text := ia.Text()
+		if strings.TrimSpace(text) == "" {
+			return false
+		}
+		ia.history = append(ia.history, text)
+		ia.historyIdx = -1
+		ia.draft = ""
+		if ia.onSubmit != nil {
+			ia.onSubmit(text)
+		}
+		ia.Clear()
+		return true
+	case domain.ActionNewline:
+		ia.insertNewline()
+		return true
+	case domain.ActionDeleteWordBackward:
+		ia.deleteWordBackward()
+		return true
+	case domain.ActionBackspace:
+		ia.backspace()
+		return true
+	case domain.ActionDelete:
+		ia.delete()
+		return true
+	case domain.ActionCursorLeft:
+		ia.moveLeft()
+		return true
+	case domain.ActionCursorRight:
+		ia.moveRight()
+		return true
+	case domain.ActionWordLeft:
+		ia.moveWordLeft()
+		return true
+	case domain.ActionWordRight:
+		ia.moveWordRight()
+		return true
+	case domain.ActionCursorUp:
+		if ia.cursorY == 0 {
+			ia.historyBack()
+		} else {
+			ia.moveUp()
+		}
+		return true
+	case domain.ActionCursorDown:
+		if ia.cursorY == len(ia.lines)-1 {
+			ia.historyForward()
+		} else {
+			ia.moveDown()
+		}
+		return true
+	case domain.ActionHome:
+		ia.cursorX = 0
+		return true
+	case domain.ActionEnd:
+		ia.cursorX = len(ia.lines[ia.cursorY])
+		return true
+	case domain.ActionKillLineBefore:
+		ia.lines[ia.cursorY] = ia.lines[ia.cursorY][ia.cursorX:]
+		ia.cursorX = 0
+		return true
+	case domain.ActionClearInput:
+		ia.Clear()
+		return true
+	case domain.ActionInsertTab:
+		for i := 0; i < 4; i++ {
+			ia.insertRune(' ')
+		}
+		return true
+	}
+	return false
+}
+
+// InsertRune handles a typed character not bound to any action. Returns true if redraw needed.
+func (ia *InputArea) InsertRune(r rune) bool {
+	if !ia.focused {
+		return false
+	}
+	ia.insertRune(r)
+	return true
 }
 
 // --- Editing operations ---

@@ -1,6 +1,10 @@
 package common
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/srogers/oc/domain"
+)
 
 // CommandPalette is an overlay component for finding and executing commands.
 type CommandPalette struct {
@@ -45,13 +49,23 @@ func (p *CommandPalette) Close() {
 }
 
 // Update handles a key event. Returns (dirty, consumed).
-func (p *CommandPalette) Update(e KeyEvent) (bool, bool) {
-	switch {
-	case e.Key == KeyEscape:
+func (p *CommandPalette) Update(e domain.KeyEvent) (bool, bool) {
+	if action, ok := resolveOverlayAction(e); ok {
+		return p.HandleAction(action)
+	}
+	if e.Key == domain.KeyRune && e.Mod == 0 {
+		return p.InsertRune(e.Rune)
+	}
+	return false, false
+}
+
+// HandleAction responds to a resolved action. Returns (needsRedraw, consumedEvent).
+func (p *CommandPalette) HandleAction(action domain.Action) (bool, bool) {
+	switch action {
+	case domain.ActionOverlayClose:
 		p.Close()
 		return true, true
-
-	case e.Key == KeyEnter:
+	case domain.ActionOverlayConfirm:
 		if p.selected < len(p.filtered) {
 			cmd := p.filtered[p.selected]
 			p.Close()
@@ -62,36 +76,52 @@ func (p *CommandPalette) Update(e KeyEvent) (bool, bool) {
 			p.Close()
 		}
 		return true, true
-
-	case e.Key == KeyUp || (e.Ctrl && (e.Rune == 'p' || e.Rune == 'k')):
+	case domain.ActionOverlayPrev:
 		if p.selected > 0 {
 			p.selected--
 		}
 		return true, true
-
-	case e.Key == KeyDown || (e.Ctrl && (e.Rune == 'n' || e.Rune == 'j')):
+	case domain.ActionOverlayNext:
 		if p.selected < len(p.filtered)-1 {
 			p.selected++
 		}
 		return true, true
-
-	case e.Key == KeyBackspace:
+	case domain.ActionOverlayBackspace:
 		if len(p.input) > 0 {
 			p.input = p.input[:len(p.input)-1]
 			p.refilter()
 			return true, true
 		}
-		// Backspace on empty input closes the palette
 		p.Close()
 		return true, true
-
-	case e.Key == KeyRune && !e.Ctrl && !e.Alt:
-		p.input = append(p.input, e.Rune)
-		p.refilter()
-		return true, true
 	}
-
 	return false, false
+}
+
+// InsertRune handles a typed character in the palette filter. Returns (needsRedraw, consumedEvent).
+func (p *CommandPalette) InsertRune(r rune) (bool, bool) {
+	p.input = append(p.input, r)
+	p.refilter()
+	return true, true
+}
+
+// resolveOverlayAction maps a key event to an overlay action using hardcoded
+// rules. Used by Update() on both CommandPalette and ModelPicker for backward
+// compatibility when no KeyMap is present.
+func resolveOverlayAction(e domain.KeyEvent) (domain.Action, bool) {
+	switch {
+	case e.Key == domain.KeyEscape:
+		return domain.ActionOverlayClose, true
+	case e.Key == domain.KeyEnter:
+		return domain.ActionOverlayConfirm, true
+	case e.Key == domain.KeyUp || (e.Mod.Has(domain.ModCtrl) && (e.Rune == 'p' || e.Rune == 'k')):
+		return domain.ActionOverlayPrev, true
+	case e.Key == domain.KeyDown || (e.Mod.Has(domain.ModCtrl) && (e.Rune == 'n' || e.Rune == 'j')):
+		return domain.ActionOverlayNext, true
+	case e.Key == domain.KeyBackspace:
+		return domain.ActionOverlayBackspace, true
+	}
+	return "", false
 }
 
 // refilter matches the current input against all commands and sorts by score.

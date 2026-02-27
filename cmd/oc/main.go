@@ -13,8 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/srogers/oc/assets"
 	"github.com/srogers/oc/auth"
 	"github.com/srogers/oc/config"
+	"github.com/srogers/oc/domain"
 	"github.com/srogers/oc/event"
 	"github.com/srogers/oc/history"
 	"github.com/srogers/oc/provider"
@@ -186,6 +188,15 @@ func run(c *cli.Context) error {
 	// Create command registry
 	commands := common.NewCommandRegistry()
 
+	// Load key bindings
+	km := domain.NewKeyMap()
+	if err := domain.LoadKeyMapBytes(km, assets.DefaultKeybindings); err != nil {
+		panic("bad default keybindings: " + err.Error())
+	}
+	if err := domain.LoadKeyMapFile(km, domain.DefaultBindingsPath()); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: keybindings: %v\n", err)
+	}
+
 	// Build model fetcher (if provider supports listing)
 	var fetchModels custom.FetchModels
 	if lister, ok := p.(provider.ModelLister); ok {
@@ -196,6 +207,7 @@ func run(c *cli.Context) error {
 
 	// Create TUI
 	ui := custom.New(custom.Deps{
+		KeyMap: km,
 		Source: bus,
 		OnInput: func(text string) {
 			histStore.Append(text)

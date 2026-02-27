@@ -1,6 +1,10 @@
 package common
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/srogers/oc/domain"
+)
 
 // ModelPicker is an overlay component for searching and selecting AI models.
 type ModelPicker struct {
@@ -69,13 +73,23 @@ func (p *ModelPicker) Close() {
 }
 
 // Update handles a key event. Returns (dirty, consumed).
-func (p *ModelPicker) Update(e KeyEvent) (bool, bool) {
-	switch {
-	case e.Key == KeyEscape:
+func (p *ModelPicker) Update(e domain.KeyEvent) (bool, bool) {
+	if action, ok := resolveOverlayAction(e); ok {
+		return p.HandleAction(action)
+	}
+	if e.Key == domain.KeyRune && e.Mod == 0 {
+		return p.InsertRune(e.Rune)
+	}
+	return false, false
+}
+
+// HandleAction responds to a resolved action. Returns (needsRedraw, consumedEvent).
+func (p *ModelPicker) HandleAction(action domain.Action) (bool, bool) {
+	switch action {
+	case domain.ActionOverlayClose:
 		p.Close()
 		return true, true
-
-	case e.Key == KeyEnter:
+	case domain.ActionOverlayConfirm:
 		if p.selected < len(p.filtered) {
 			model := p.filtered[p.selected].name
 			p.Close()
@@ -86,20 +100,17 @@ func (p *ModelPicker) Update(e KeyEvent) (bool, bool) {
 			p.Close()
 		}
 		return true, true
-
-	case e.Key == KeyUp || (e.Ctrl && (e.Rune == 'p' || e.Rune == 'k')):
+	case domain.ActionOverlayPrev:
 		if p.selected > 0 {
 			p.selected--
 		}
 		return true, true
-
-	case e.Key == KeyDown || (e.Ctrl && (e.Rune == 'n' || e.Rune == 'j')):
+	case domain.ActionOverlayNext:
 		if p.selected < len(p.filtered)-1 {
 			p.selected++
 		}
 		return true, true
-
-	case e.Key == KeyBackspace:
+	case domain.ActionOverlayBackspace:
 		if len(p.input) > 0 {
 			p.input = p.input[:len(p.input)-1]
 			p.refilter()
@@ -107,14 +118,15 @@ func (p *ModelPicker) Update(e KeyEvent) (bool, bool) {
 		}
 		p.Close()
 		return true, true
-
-	case e.Key == KeyRune && !e.Ctrl && !e.Alt:
-		p.input = append(p.input, e.Rune)
-		p.refilter()
-		return true, true
 	}
-
 	return false, false
+}
+
+// InsertRune handles a typed character in the picker filter. Returns (needsRedraw, consumedEvent).
+func (p *ModelPicker) InsertRune(r rune) (bool, bool) {
+	p.input = append(p.input, r)
+	p.refilter()
+	return true, true
 }
 
 // refilter matches the current input against all models and sorts by score.
