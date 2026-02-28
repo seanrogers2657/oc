@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/srogers/oc/tool/diff"
+	"github.com/seanrogers2657/oc/tool/diff"
 )
 
 // WriteTool writes or creates files.
@@ -79,10 +79,10 @@ func (t *WriteTool) Execute(ctx Context, argsJSON string) Result {
 		diffResult.OldName = path
 		diffResult.NewName = path
 		result.Diff = &diffResult
-		
+
 		// Update title to include diff stats if there are changes
 		if diffResult.Added > 0 || diffResult.Removed > 0 {
-			result.Title = fmt.Sprintf("Write %s (+%d -%d)", 
+			result.Title = fmt.Sprintf("Write %s (+%d -%d)",
 				filepath.Base(path), diffResult.Added, diffResult.Removed)
 		}
 	}

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/srogers/oc/domain"
+	"github.com/seanrogers2657/oc/domain"
 )
 
 // InputArea is a multi-line text editor component.

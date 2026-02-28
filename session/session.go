@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/srogers/oc/provider"
+	"github.com/seanrogers2657/oc/provider"
 )
 
 // SessionStatus indicates the current state of a session.
@@ -26,15 +26,15 @@ type Deps struct {
 
 // Session holds conversation state and orchestrates the model loop.
 type Session struct {
-	ID         string
-	Config     provider.ModelConfig
-	WorkingDir string // inherited from where oc was invoked
-	deps       Deps
-	mu         sync.RWMutex
-	messages   []Message
-	status     SessionStatus
+	ID            string
+	Config        provider.ModelConfig
+	WorkingDir    string // inherited from where oc was invoked
+	deps          Deps
+	mu            sync.RWMutex
+	messages      []Message
+	status        SessionStatus
 	tokens        provider.Usage
-	contextTokens int // input tokens from the most recent request
+	contextTokens int    // input tokens from the most recent request
 	cancel        func() // cancel current stream
 }
 

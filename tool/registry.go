@@ -1,6 +1,6 @@
 package tool
 
-import "github.com/srogers/oc/provider"
+import "github.com/seanrogers2657/oc/provider"
 
 // ToolRegistry is a name->Tool lookup.
 type ToolRegistry struct {

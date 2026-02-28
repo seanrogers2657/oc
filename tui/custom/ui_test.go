@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/srogers/oc/domain"
-	"github.com/srogers/oc/session"
-	"github.com/srogers/oc/tui/common"
+	"github.com/seanrogers2657/oc/domain"
+	"github.com/seanrogers2657/oc/session"
+	"github.com/seanrogers2657/oc/tui/common"
 )
 
 // scrollbackState mirrors the fields used in UI.render() for scrollback logic.

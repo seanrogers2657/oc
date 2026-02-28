@@ -3,7 +3,7 @@ package common
 import (
 	"sort"
 
-	"github.com/srogers/oc/domain"
+	"github.com/seanrogers2657/oc/domain"
 )
 
 // ModelPicker is an overlay component for searching and selecting AI models.

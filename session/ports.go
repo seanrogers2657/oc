@@ -3,9 +3,9 @@ package session
 import (
 	"context"
 
-	"github.com/srogers/oc/event"
-	"github.com/srogers/oc/provider"
-	"github.com/srogers/oc/tool"
+	"github.com/seanrogers2657/oc/event"
+	"github.com/seanrogers2657/oc/provider"
+	"github.com/seanrogers2657/oc/tool"
 )
 
 // ModelClient abstracts AI model interaction.

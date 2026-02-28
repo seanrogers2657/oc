@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/srogers/oc/domain"
+	"github.com/seanrogers2657/oc/domain"
 )
 
 // collectEvents feeds data through parseInput and collects all events.

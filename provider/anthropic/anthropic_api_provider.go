@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/srogers/oc/config"
-	"github.com/srogers/oc/provider"
+	"github.com/seanrogers2657/oc/config"
+	"github.com/seanrogers2657/oc/provider"
 )
 
 func NewAnthropicApiProvider(

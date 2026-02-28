@@ -1,4 +1,4 @@
-module github.com/srogers/oc
+module github.com/seanrogers2657/oc
 
 go 1.25.0
 

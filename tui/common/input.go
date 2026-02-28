@@ -4,7 +4,7 @@ import (
 	"io"
 	"unicode/utf8"
 
-	"github.com/srogers/oc/domain"
+	"github.com/seanrogers2657/oc/domain"
 )
 
 // ReadInput reads raw bytes from r and sends parsed KeyEvents to the events channel.
@@ -260,4 +260,3 @@ func parseBracketedPaste(data []byte, events chan<- Event) int {
 	// Return 0 to not consume anything (will be retried with more data)
 	return 0
 }
-

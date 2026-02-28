@@ -1,6 +1,6 @@
 package custom
 
-import "github.com/srogers/oc/tui/common"
+import "github.com/seanrogers2657/oc/tui/common"
 
 // Layout holds the computed bounds for the three panels.
 type Layout struct {

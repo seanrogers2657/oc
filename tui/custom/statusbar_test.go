@@ -3,8 +3,8 @@ package custom
 import (
 	"testing"
 
-	"github.com/srogers/oc/domain"
-	"github.com/srogers/oc/tui/common"
+	"github.com/seanrogers2657/oc/domain"
+	"github.com/seanrogers2657/oc/tui/common"
 )
 
 func TestFormatTokens(t *testing.T) {

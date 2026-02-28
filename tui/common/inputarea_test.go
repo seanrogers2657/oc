@@ -3,7 +3,7 @@ package common
 import (
 	"testing"
 
-	"github.com/srogers/oc/domain"
+	"github.com/seanrogers2657/oc/domain"
 )
 
 func newTestInputArea() *InputArea {
@@ -449,8 +449,8 @@ func TestInputAreaHistoryDown(t *testing.T) {
 	submitText(ia, "first")
 	submitText(ia, "second")
 
-	sendKey(ia, domain.KeyUp) // -> "second"
-	sendKey(ia, domain.KeyUp) // -> "first"
+	sendKey(ia, domain.KeyUp)   // -> "second"
+	sendKey(ia, domain.KeyUp)   // -> "first"
 	sendKey(ia, domain.KeyDown) // -> "second"
 	if ia.Text() != "second" {
 		t.Fatalf("Down: Text() = %q, want %q", ia.Text(), "second")

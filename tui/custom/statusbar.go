@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/srogers/oc/tui/common"
+	"github.com/seanrogers2657/oc/tui/common"
 )
 
 // StatusBar displays model info, token count, and session status.

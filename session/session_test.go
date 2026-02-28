@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/srogers/oc/provider"
+	"github.com/seanrogers2657/oc/provider"
 )
 
 func TestStoreCreateAndGet(t *testing.T) {
@@ -70,8 +70,8 @@ func TestSessionGetMessages(t *testing.T) {
 
 	// Add a message directly
 	s.addMessage(Message{
-		ID:   "msg_1",
-		Role: provider.RoleUser,
+		ID:    "msg_1",
+		Role:  provider.RoleUser,
 		Parts: []Part{TextPart{Text: "hello"}},
 	})
 

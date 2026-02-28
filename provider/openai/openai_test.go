@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/srogers/oc/provider"
+	"github.com/seanrogers2657/oc/provider"
 )
 
 // newTestOpenAI creates an OpenAIProvider wired to the given test server.

@@ -4,13 +4,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/srogers/oc/domain"
-	"github.com/srogers/oc/event"
-	"github.com/srogers/oc/markdown"
-	"github.com/srogers/oc/provider"
-	"github.com/srogers/oc/session"
-	"github.com/srogers/oc/tool/diff"
-	"github.com/srogers/oc/tui/common"
+	"github.com/seanrogers2657/oc/domain"
+	"github.com/seanrogers2657/oc/event"
+	"github.com/seanrogers2657/oc/markdown"
+	"github.com/seanrogers2657/oc/provider"
+	"github.com/seanrogers2657/oc/session"
+	"github.com/seanrogers2657/oc/tool/diff"
+	"github.com/seanrogers2657/oc/tui/common"
 )
 
 // MessageList is a scrollable chat history component.

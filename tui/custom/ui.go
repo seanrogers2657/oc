@@ -12,9 +12,9 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/srogers/oc/domain"
-	"github.com/srogers/oc/event"
-	"github.com/srogers/oc/tui/common"
+	"github.com/seanrogers2657/oc/domain"
+	"github.com/seanrogers2657/oc/event"
+	"github.com/seanrogers2657/oc/tui/common"
 )
 
 // Deps holds the injected dependencies for the UI.
@@ -395,8 +395,8 @@ func (t *UI) render() {
 	if t.showFPS {
 		label := fmt.Sprintf(" %d fps ", t.currentFPS)
 		fpsStyle := common.Style{
-			FG: common.NewColor(0, 0, 0),
-			BG: common.NewColor(255, 220, 0),
+			FG:   common.NewColor(0, 0, 0),
+			BG:   common.NewColor(255, 220, 0),
 			Bold: true,
 		}
 		t.next.WriteString(t.width-len(label), 0, label, fpsStyle)
@@ -463,8 +463,8 @@ func (t *UI) fullRender() {
 	if t.showFPS {
 		label := fmt.Sprintf(" %d fps ", t.currentFPS)
 		fpsStyle := common.Style{
-			FG: common.NewColor(0, 0, 0),
-			BG: common.NewColor(255, 220, 0),
+			FG:   common.NewColor(0, 0, 0),
+			BG:   common.NewColor(255, 220, 0),
 			Bold: true,
 		}
 		t.next.WriteString(t.width-len(label), 0, label, fpsStyle)

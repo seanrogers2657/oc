@@ -3,7 +3,7 @@ package auth
 import (
 	"time"
 
-	"github.com/srogers/oc/config"
+	"github.com/seanrogers2657/oc/config"
 )
 
 // Token holds OAuth access and refresh tokens.

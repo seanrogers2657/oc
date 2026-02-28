@@ -13,19 +13,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/srogers/oc/assets"
-	"github.com/srogers/oc/auth"
-	"github.com/srogers/oc/config"
-	"github.com/srogers/oc/domain"
-	"github.com/srogers/oc/event"
-	"github.com/srogers/oc/history"
-	"github.com/srogers/oc/provider"
-	"github.com/srogers/oc/provider/anthropic"
-	"github.com/srogers/oc/provider/openai"
-	"github.com/srogers/oc/session"
-	"github.com/srogers/oc/tool"
-	"github.com/srogers/oc/tui/common"
-	"github.com/srogers/oc/tui/custom"
+	"github.com/seanrogers2657/oc/assets"
+	"github.com/seanrogers2657/oc/auth"
+	"github.com/seanrogers2657/oc/config"
+	"github.com/seanrogers2657/oc/domain"
+	"github.com/seanrogers2657/oc/event"
+	"github.com/seanrogers2657/oc/history"
+	"github.com/seanrogers2657/oc/provider"
+	"github.com/seanrogers2657/oc/provider/anthropic"
+	"github.com/seanrogers2657/oc/provider/openai"
+	"github.com/seanrogers2657/oc/session"
+	"github.com/seanrogers2657/oc/tool"
+	"github.com/seanrogers2657/oc/tui/common"
+	"github.com/seanrogers2657/oc/tui/custom"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -233,7 +233,7 @@ func run(c *cli.Context) error {
 		Messages: func() []session.Message {
 			return sess.GetMessages()
 		},
-		Commands: commands,
+		Commands:    commands,
 		FetchModels: fetchModels,
 		OnModelSelect: func(model string) {
 			sess.SetModel(model)

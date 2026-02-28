@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/srogers/oc/auth"
-	"github.com/srogers/oc/config"
-	"github.com/srogers/oc/provider"
+	"github.com/seanrogers2657/oc/auth"
+	"github.com/seanrogers2657/oc/config"
+	"github.com/seanrogers2657/oc/provider"
 )
 
 func NewAnthropicSubscriptionProvider(

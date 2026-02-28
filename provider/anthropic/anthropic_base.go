@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/srogers/oc/provider"
+	"github.com/seanrogers2657/oc/provider"
 )
 
 // ListModels fetches available models from the Anthropic /v1/models endpoint.

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/srogers/oc/markdown"
-	"github.com/srogers/oc/tui/common"
+	"github.com/seanrogers2657/oc/markdown"
+	"github.com/seanrogers2657/oc/tui/common"
 )
 
 func TestWrapTextASCII(t *testing.T) {

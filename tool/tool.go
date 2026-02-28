@@ -3,7 +3,7 @@ package tool
 import (
 	"context"
 
-	"github.com/srogers/oc/tool/diff"
+	"github.com/seanrogers2657/oc/tool/diff"
 )
 
 // Result is what a tool returns after execution.

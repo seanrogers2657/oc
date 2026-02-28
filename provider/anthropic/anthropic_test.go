@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/srogers/oc/config"
-	"github.com/srogers/oc/provider"
+	"github.com/seanrogers2657/oc/config"
+	"github.com/seanrogers2657/oc/provider"
 )
 
 // newTestProvider creates an AnthropicApiProvider wired to the given test server.

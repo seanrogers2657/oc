@@ -1,8 +1,8 @@
 package custom
 
 import (
-	"github.com/srogers/oc/event"
-	"github.com/srogers/oc/session"
+	"github.com/seanrogers2657/oc/event"
+	"github.com/seanrogers2657/oc/session"
 )
 
 // InputHandler is called when the user submits text from the input area.

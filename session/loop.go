@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/srogers/oc/event"
-	"github.com/srogers/oc/provider"
-	"github.com/srogers/oc/tool"
+	"github.com/seanrogers2657/oc/event"
+	"github.com/seanrogers2657/oc/provider"
+	"github.com/seanrogers2657/oc/tool"
 )
 
 const (
-	maxRetries       = 5
-	initialBackoff   = 5 * time.Second
-	maxBackoff       = 60 * time.Second
+	maxRetries     = 5
+	initialBackoff = 5 * time.Second
+	maxBackoff     = 60 * time.Second
 )
 
 // Send processes a user message: appends it to history, then runs the
@@ -292,7 +292,7 @@ func (s *Session) executeToolCalls(ctx context.Context, assistantMsg *Message) e
 
 		tc.End = time.Now()
 		tc.Title = result.Title
-		tc.Diff = result.Diff  // Store diff information
+		tc.Diff = result.Diff // Store diff information
 		if result.Error != nil {
 			tc.Status = ToolError
 			tc.Error = result.Error.Error()

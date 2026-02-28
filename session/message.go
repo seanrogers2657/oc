@@ -3,8 +3,8 @@ package session
 import (
 	"time"
 
-	"github.com/srogers/oc/provider"
-	"github.com/srogers/oc/tool/diff"
+	"github.com/seanrogers2657/oc/provider"
+	"github.com/seanrogers2657/oc/tool/diff"
 )
 
 // ToolStatus tracks the lifecycle of a tool call.

@@ -3,7 +3,7 @@ package common
 import (
 	"sort"
 
-	"github.com/srogers/oc/domain"
+	"github.com/seanrogers2657/oc/domain"
 )
 
 // CommandPalette is an overlay component for finding and executing commands.
