@@ -82,11 +82,15 @@ func Render(input string) []Line {
 		if strings.HasPrefix(trimmed, "#") {
 			level, text := parseHeader(trimmed)
 			if level > 0 {
-				prefix := strings.Repeat("#", level) + " "
-				result = append(result, Line{Spans: []Span{
-					{Text: prefix, Kind: KindHeader},
-					{Text: text, Kind: KindHeader},
-				}})
+				// Parse inline formatting within header text,
+				// promoting KindNormal spans to KindHeader.
+				spans := parseInline(text)
+				for i := range spans {
+					if spans[i].Kind == KindNormal {
+						spans[i].Kind = KindHeader
+					}
+				}
+				result = append(result, Line{Spans: spans})
 				continue
 			}
 		}

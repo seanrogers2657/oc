@@ -133,6 +133,46 @@ func TestRenderHeader(t *testing.T) {
 		if header == nil {
 			t.Fatalf("input %q: expected header span", test.input)
 		}
+		if header.Text != test.text {
+			t.Errorf("input %q: expected header text %q, got %q", test.input, test.text, header.Text)
+		}
+		// Ensure # prefix is not in the output
+		fullText := spanText(lines[0].Spans)
+		if strings.Contains(fullText, "#") {
+			t.Errorf("input %q: header should not contain # prefix, got %q", test.input, fullText)
+		}
+	}
+}
+
+func TestRenderHeaderWithInlineFormatting(t *testing.T) {
+	lines := Render("### Why **Context** and *Approach*")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+	// Should have header spans for normal text, bold for **Context**, italic for *Approach*
+	bold := findSpanKind(lines[0].Spans, KindBold)
+	if bold == nil {
+		t.Fatal("expected bold span within header")
+	}
+	if bold.Text != "Context" {
+		t.Errorf("expected bold text 'Context', got %q", bold.Text)
+	}
+	italic := findSpanKind(lines[0].Spans, KindItalic)
+	if italic == nil {
+		t.Fatal("expected italic span within header")
+	}
+	if italic.Text != "Approach" {
+		t.Errorf("expected italic text 'Approach', got %q", italic.Text)
+	}
+	// Normal text in header should be KindHeader
+	header := findSpanKind(lines[0].Spans, KindHeader)
+	if header == nil {
+		t.Fatal("expected header span for normal text")
+	}
+	// No raw ** markers
+	fullText := spanText(lines[0].Spans)
+	if strings.Contains(fullText, "**") || strings.Contains(fullText, "##") {
+		t.Errorf("header should not contain raw markers, got %q", fullText)
 	}
 }
 
