@@ -1,3 +1,5 @@
+* remove the help command, its not useful
+* simple install.sh script for most recent release
 * [feature] configurable fps setting, via user settings (global)
 * [feature] ? for keyboard shortcuts/help, this will probably require creating a new scrollable TUI component so that the user can move up and down to see what key bindings are available.
 * [feature] project based && user based settings, basically .oc/ folder in current directory with all project based configurations that we should adhere to. and ~/.oc/config.json for user based settings.
